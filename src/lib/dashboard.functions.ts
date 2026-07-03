@@ -25,7 +25,7 @@ type TxRow = {
   obs_parcela: string | null; obs_lancamento: string | null;
 };
 
-async function loadActiveTransactions(supabase: NonNullable<Parameters<typeof requireSupabaseAuth>[0]> extends never ? never : any, filters: Filters): Promise<TxRow[]> {
+async function loadActiveTransactions(supabase: any, filters: Filters): Promise<TxRow[]> {
   const { data: rep } = await supabase.from("reports").select("id").eq("status", "active").maybeSingle();
   if (!rep) return [];
   let q = supabase.from("transactions").select("*").eq("report_id", rep.id);
