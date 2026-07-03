@@ -14,16 +14,149 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      reports: {
+        Row: {
+          filename: string
+          id: string
+          period_end: string | null
+          period_start: string | null
+          row_count: number
+          status: string
+          uploaded_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          filename: string
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          row_count?: number
+          status?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          filename?: string
+          id?: string
+          period_end?: string | null
+          period_start?: string | null
+          row_count?: number
+          status?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          centro_custo: string | null
+          conta: string | null
+          desconto: number
+          documento: string | null
+          emissao: string | null
+          fornecedor: string | null
+          id: number
+          juros: number
+          multa: number
+          obs_lancamento: string | null
+          obs_parcela: string | null
+          pagamento: string | null
+          report_id: string
+          status: string
+          valor: number
+          valor_aberto: number
+          valor_pago: number
+          valor_total: number
+          vencimento: string | null
+        }
+        Insert: {
+          centro_custo?: string | null
+          conta?: string | null
+          desconto?: number
+          documento?: string | null
+          emissao?: string | null
+          fornecedor?: string | null
+          id?: number
+          juros?: number
+          multa?: number
+          obs_lancamento?: string | null
+          obs_parcela?: string | null
+          pagamento?: string | null
+          report_id: string
+          status?: string
+          valor?: number
+          valor_aberto?: number
+          valor_pago?: number
+          valor_total?: number
+          vencimento?: string | null
+        }
+        Update: {
+          centro_custo?: string | null
+          conta?: string | null
+          desconto?: number
+          documento?: string | null
+          emissao?: string | null
+          fornecedor?: string | null
+          id?: number
+          juros?: number
+          multa?: number
+          obs_lancamento?: string | null
+          obs_parcela?: string | null
+          pagamento?: string | null
+          report_id?: string
+          status?: string
+          valor?: number
+          valor_aberto?: number
+          valor_pago?: number
+          valor_total?: number
+          vencimento?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +283,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const
