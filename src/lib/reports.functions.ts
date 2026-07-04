@@ -76,12 +76,8 @@ export const importReport = createServerFn({ method: "POST" })
     csvText: z.string().optional(),
   }).refine((v) => v.base64 || v.csvText, { message: "Arquivo não enviado" }).parse(raw))
   .handler(async ({ data, context }) => {
-    // Admin-only
-    const { data: roleRow } = await context.supabase
-      .from("user_roles").select("role").eq("user_id", context.userId).eq("role", "admin").maybeSingle();
-    if (!roleRow) throw new Error("Somente administradores podem importar relatórios.");
-
     let wb: XLSX.WorkBook;
+
     if (data.csvText) {
       wb = XLSX.read(data.csvText, { type: "string" });
     } else {

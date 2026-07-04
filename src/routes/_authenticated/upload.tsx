@@ -2,15 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { importReport } from "@/lib/reports.functions";
-import { isCurrentUserAdmin } from "@/lib/users.functions";
 import { AppShell } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
-import { UploadCloud, FileSpreadsheet, Loader2, CheckCircle2, Lock } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
@@ -24,8 +22,6 @@ function UploadPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const importFn = useServerFn(importReport);
-  const fetchAdmin = useServerFn(isCurrentUserAdmin);
-  const adminQ = useQuery({ queryKey: ["is-admin"], queryFn: () => fetchAdmin() });
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -96,36 +92,8 @@ function UploadPage() {
     } finally { setUploading(false); }
   }
 
-  if (adminQ.isLoading) {
-    return (
-      <AppShell>
-        <div className="mx-auto max-w-3xl space-y-4">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-64 w-full" />
-        </div>
-      </AppShell>
-    );
-  }
-
-  if (!adminQ.data?.isAdmin) {
-    return (
-      <AppShell>
-        <div className="mx-auto max-w-3xl">
-          <Card className="p-10 flex flex-col items-center text-center gap-4">
-            <div className="rounded-full bg-muted p-4"><Lock className="h-8 w-8 text-muted-foreground" /></div>
-            <h1 className="text-xl font-bold">Acesso restrito</h1>
-            <p className="text-sm text-muted-foreground max-w-md">
-              A importação de relatórios é permitida somente para administradores.
-              Solicite acesso a um administrador ou volte ao dashboard.
-            </p>
-            <Button onClick={() => nav({ to: "/dashboard" })}>Voltar ao dashboard</Button>
-          </Card>
-        </div>
-      </AppShell>
-    );
-  }
-
   return (
+
     <AppShell>
       <div className="mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold">Novo Upload</h1>
