@@ -159,10 +159,19 @@ export const importReport = createServerFn({ method: "POST" })
       };
     });
 
+    // Deduplicate rows within the same file by (documento|fornecedor|vencimento|valor)
+    const seen = new Set<string>();
+    const deduped = parsed.filter((r) => {
+      const key = `${r.documento ?? ""}|${r.fornecedor ?? ""}|${r.vencimento ?? ""}|${r.valor}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
     // Insert in batches
     const CHUNK = 1000;
-    for (let i = 0; i < parsed.length; i += CHUNK) {
-      const slice = parsed.slice(i, i + CHUNK);
+    for (let i = 0; i < deduped.length; i += CHUNK) {
+      const slice = deduped.slice(i, i + CHUNK);
       const { error } = await supabaseAdmin.from("transactions").insert(slice);
       if (error) throw new Error(`Falha ao inserir lote ${i / CHUNK + 1}: ${error.message}`);
     }
