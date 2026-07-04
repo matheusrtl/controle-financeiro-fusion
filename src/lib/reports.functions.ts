@@ -66,24 +66,36 @@ function statusFor(pagamento: string | null, vencimento: string | null, valorAbe
 // ============================================================
 // Import a new report (replaces the active one)
 // ============================================================
+const REQUIRED_COLUMNS = ["Documento", "Fornecedor - Nome", "Vencimento", "Valor"];
+
 export const importReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw) => z.object({
     filename: z.string(),
-    base64: z.string(), // xlsx bytes
-  }).parse(raw))
+    base64: z.string().optional(),
+    csvText: z.string().optional(),
+  }).refine((v) => v.base64 || v.csvText, { message: "Arquivo não enviado" }).parse(raw))
   .handler(async ({ data, context }) => {
     // Admin-only
     const { data: roleRow } = await context.supabase
       .from("user_roles").select("role").eq("user_id", context.userId).eq("role", "admin").maybeSingle();
     if (!roleRow) throw new Error("Somente administradores podem importar relatórios.");
 
-    const bytes = Uint8Array.from(atob(data.base64), (c) => c.charCodeAt(0));
-    const wb = XLSX.read(bytes, { type: "array", cellDates: true });
+    let wb: XLSX.WorkBook;
+    if (data.csvText) {
+      wb = XLSX.read(data.csvText, { type: "string" });
+    } else {
+      const bytes = Uint8Array.from(atob(data.base64!), (c) => c.charCodeAt(0));
+      wb = XLSX.read(bytes, { type: "array", cellDates: true });
+    }
     const sheet = wb.Sheets[wb.SheetNames[0]];
     if (!sheet) throw new Error("Planilha vazia.");
     const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
     if (rows.length === 0) throw new Error("Nenhuma linha encontrada.");
+
+    const headers = Object.keys(rows[0]).map((h) => h.trim().toLowerCase());
+    const missing = REQUIRED_COLUMNS.filter((c) => !headers.includes(c.toLowerCase()));
+    if (missing.length) throw new Error(`Colunas obrigatórias ausentes: ${missing.join(", ")}`);
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -147,20 +159,29 @@ export const importReport = createServerFn({ method: "POST" })
       };
     });
 
+    // Deduplicate rows within the same file by (documento|fornecedor|vencimento|valor)
+    const seen = new Set<string>();
+    const deduped = parsed.filter((r) => {
+      const key = `${r.documento ?? ""}|${r.fornecedor ?? ""}|${r.vencimento ?? ""}|${r.valor}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
     // Insert in batches
     const CHUNK = 1000;
-    for (let i = 0; i < parsed.length; i += CHUNK) {
-      const slice = parsed.slice(i, i + CHUNK);
+    for (let i = 0; i < deduped.length; i += CHUNK) {
+      const slice = deduped.slice(i, i + CHUNK);
       const { error } = await supabaseAdmin.from("transactions").insert(slice);
       if (error) throw new Error(`Falha ao inserir lote ${i / CHUNK + 1}: ${error.message}`);
     }
 
     await supabaseAdmin
       .from("reports")
-      .update({ row_count: parsed.length, period_start: minDate, period_end: maxDate })
+      .update({ row_count: deduped.length, period_start: minDate, period_end: maxDate })
       .eq("id", newReport.id);
 
-    return { reportId: newReport.id, rowCount: parsed.length };
+    return { reportId: newReport.id, rowCount: deduped.length };
   });
 
 // ============================================================
