@@ -178,10 +178,10 @@ export const importReport = createServerFn({ method: "POST" })
 
     await supabaseAdmin
       .from("reports")
-      .update({ row_count: parsed.length, period_start: minDate, period_end: maxDate })
+      .update({ row_count: deduped.length, period_start: minDate, period_end: maxDate })
       .eq("id", newReport.id);
 
-    return { reportId: newReport.id, rowCount: parsed.length };
+    return { reportId: newReport.id, rowCount: deduped.length };
   });
 
 // ============================================================
