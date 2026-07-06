@@ -440,6 +440,45 @@ function Row({ label, value, color }: { label: string; value: string; color: str
   );
 }
 
+function OpeningBalancePopover({ opening, onSave }: { opening: { value: number; date: string }; onSave: (v: { value: number; date: string }) => void }) {
+  const [value, setValue] = useState(String(opening.value ?? 0));
+  const [date, setDate] = useState(opening.date ?? "");
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2">
+          <Settings2 className="h-4 w-4" />
+          Saldo inicial
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 space-y-3">
+        <div>
+          <h4 className="text-sm font-semibold">Saldo inicial</h4>
+          <p className="text-xs text-muted-foreground">Define o ponto de partida do saldo acumulado.</p>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs">Data de referência</Label>
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs">Valor (R$)</Label>
+          <Input type="number" step="0.01" value={value} onChange={(e) => setValue(e.target.value)} placeholder="0,00" />
+        </div>
+        <div className="flex justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={() => { onSave({ value: 0, date: "" }); setValue("0"); setDate(""); setOpen(false); toast.success("Saldo inicial removido"); }}>
+            Limpar
+          </Button>
+          <Button size="sm" onClick={() => { onSave({ value: Number(value) || 0, date }); setOpen(false); toast.success("Saldo inicial atualizado"); }}>
+            Salvar
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+
 function exportCsv(rows: any[]) {
   if (!rows.length) { toast.info("Nenhum lançamento para exportar."); return; }
   const cols = ["documento", "fornecedor", "emissao", "vencimento", "pagamento", "valor", "multa", "juros", "desconto", "valor_pago", "valor_aberto", "valor_total", "centro_custo", "conta", "status"];
