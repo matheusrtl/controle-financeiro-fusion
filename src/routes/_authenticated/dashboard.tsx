@@ -22,8 +22,10 @@ import {
 } from "recharts";
 import {
   ArrowDownCircle, ArrowUpCircle, Wallet, AlertTriangle, CheckCircle2, Clock,
-  Search, Download, ChevronLeft, ChevronRight,
+  Search, Download, ChevronLeft, ChevronRight, Settings2,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -44,6 +46,18 @@ function DashboardPage() {
   const [granularity, setGranularity] = useState<"day" | "week" | "month" | "year">("month");
   const [page, setPage] = useState(0);
   const [detail, setDetail] = useState<any | null>(null);
+  const [opening, setOpening] = useState<{ value: number; date: string }>(() => {
+    if (typeof window === "undefined") return { value: 0, date: "" };
+    try {
+      const raw = localStorage.getItem("fusion:opening");
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { value: 0, date: "" };
+  });
+  const saveOpening = (v: { value: number; date: string }) => {
+    setOpening(v);
+    try { localStorage.setItem("fusion:opening", JSON.stringify(v)); } catch {}
+  };
 
   const kpisFn = useServerFn(getKpis);
   const seriesFn = useServerFn(getCashflowSeries);
@@ -53,7 +67,10 @@ function DashboardPage() {
   const facetsFn = useServerFn(getFacets);
 
   const kpis = useQuery({ queryKey: ["kpis", filters], queryFn: () => kpisFn({ data: filters }) });
-  const series = useQuery({ queryKey: ["series", filters, granularity], queryFn: () => seriesFn({ data: { granularity, filters } }) });
+  const series = useQuery({
+    queryKey: ["series", filters, granularity, opening],
+    queryFn: () => seriesFn({ data: { granularity, filters, openingBalance: opening.value || 0, openingDate: opening.date || undefined } }),
+  });
   const alerts = useQuery({ queryKey: ["alerts", filters], queryFn: () => alertsFn({ data: filters }) });
   const byCC = useQuery({ queryKey: ["breakdown-cc", filters], queryFn: () => breakdownFn({ data: { dimension: "centro_custo", filters, limit: 8 } }) });
   const byConta = useQuery({ queryKey: ["breakdown-conta", filters], queryFn: () => breakdownFn({ data: { dimension: "conta", filters, limit: 8 } }) });
@@ -113,36 +130,46 @@ function DashboardPage() {
       {/* Chart + alerts */}
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
         <Card className="p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-bold">Fluxo de Caixa</h2>
-              <p className="text-xs text-muted-foreground">Receber, Pagar e Saldo acumulado</p>
+              <p className="text-xs text-muted-foreground">
+                Receber, Pagar (barras · esquerda) e Saldo acumulado (linha · direita)
+                {opening.date && opening.value ? ` · Saldo inicial ${formatBRL(opening.value)} em ${formatDateBR(opening.date)}` : ""}
+              </p>
             </div>
-            <Tabs value={granularity} onValueChange={(v) => setGranularity(v as any)}>
-              <TabsList>
-                <TabsTrigger value="day">Dia</TabsTrigger>
-                <TabsTrigger value="week">Semana</TabsTrigger>
-                <TabsTrigger value="month">Mês</TabsTrigger>
-                <TabsTrigger value="year">Ano</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex items-center gap-2">
+              <OpeningBalancePopover opening={opening} onSave={saveOpening} />
+              <Tabs value={granularity} onValueChange={(v) => setGranularity(v as any)}>
+                <TabsList>
+                  <TabsTrigger value="day">Dia</TabsTrigger>
+                  <TabsTrigger value="week">Semana</TabsTrigger>
+                  <TabsTrigger value="month">Mês</TabsTrigger>
+                  <TabsTrigger value="year">Ano</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
           </div>
           <div className="h-[340px]">
             <ResponsiveContainer>
               <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="label" tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
-                <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                <YAxis yAxisId="left" tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                  tickFormatter={(v) => Intl.NumberFormat("pt-BR", { notation: "compact" }).format(v)} />
+                <YAxis yAxisId="right" orientation="right"
+                  tick={{ fill: "#1565C0", fontSize: 12 }}
                   tickFormatter={(v) => Intl.NumberFormat("pt-BR", { notation: "compact" }).format(v)} />
                 <RTooltip content={<ChartTooltip />} />
                 <Legend />
-                <Bar dataKey="receber" name="Receber" fill="#2E7D32" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="pagar" name="Pagar" fill="#D32F2F" radius={[4, 4, 0, 0]} />
-                <Line dataKey="saldo" name="Saldo" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 3 }} />
+                <Bar yAxisId="left" dataKey="receber" name="Receber" fill="#2E7D32" radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="left" dataKey="pagar" name="Pagar" fill="#D32F2F" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" dataKey="saldo" name="Saldo" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         </Card>
+
 
         <Card className="p-4">
           <h2 className="mb-3 text-lg font-bold">Alertas</h2>
@@ -412,6 +439,45 @@ function Row({ label, value, color }: { label: string; value: string; color: str
     </div>
   );
 }
+
+function OpeningBalancePopover({ opening, onSave }: { opening: { value: number; date: string }; onSave: (v: { value: number; date: string }) => void }) {
+  const [value, setValue] = useState(String(opening.value ?? 0));
+  const [date, setDate] = useState(opening.date ?? "");
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2">
+          <Settings2 className="h-4 w-4" />
+          Saldo inicial
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 space-y-3">
+        <div>
+          <h4 className="text-sm font-semibold">Saldo inicial</h4>
+          <p className="text-xs text-muted-foreground">Define o ponto de partida do saldo acumulado.</p>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs">Data de referência</Label>
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs">Valor (R$)</Label>
+          <Input type="number" step="0.01" value={value} onChange={(e) => setValue(e.target.value)} placeholder="0,00" />
+        </div>
+        <div className="flex justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={() => { onSave({ value: 0, date: "" }); setValue("0"); setDate(""); setOpen(false); toast.success("Saldo inicial removido"); }}>
+            Limpar
+          </Button>
+          <Button size="sm" onClick={() => { onSave({ value: Number(value) || 0, date }); setOpen(false); toast.success("Saldo inicial atualizado"); }}>
+            Salvar
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 
 function exportCsv(rows: any[]) {
   if (!rows.length) { toast.info("Nenhum lançamento para exportar."); return; }
