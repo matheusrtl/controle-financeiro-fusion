@@ -27,7 +27,7 @@ function AuthPage() {
   const nav = useNavigate();
   const search = useSearch({ from: "/auth" });
   const bootstrap = useServerFn(ensureBootstrapAdmin);
-  const [email, setEmail] = useState("admin@fusion.log.br");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -55,7 +55,7 @@ function AuthPage() {
       <Card className="w-full max-w-md p-8 shadow-[var(--shadow-card)]">
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Entrar</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Controle de Abastecimento</p>
+          <p className="mt-1 text-sm text-muted-foreground">Controle Financeiro</p>
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
