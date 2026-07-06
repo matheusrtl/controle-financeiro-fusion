@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "sdk_version": "0.20.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://rlpidvrrghxanyfdooat.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "fusion-logistica-mcp",
+      "version": "0.1.0",
+      "title": "Fusion Logística — Fluxo de Caixa"
+    },
+    "tools": [
+      {
+        "name": "get_active_report",
+        "title": "Get active report",
+        "description": "Return metadata for the currently active payments report (name, upload date, row count).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_kpis",
+        "title": "Get cash-flow KPIs",
+        "description": "Return cash-flow KPIs for the active report: totals to pay, totals received, balance, overdue counts.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "from": {
+              "description": "ISO date (YYYY-MM-DD) lower bound on vencimento.",
+              "type": "string"
+            },
+            "to": {
+              "description": "ISO date (YYYY-MM-DD) upper bound on vencimento.",
+              "type": "string"
+            },
+            "fornecedor": {
+              "description": "Filter by supplier name (ILIKE).",
+              "type": "string"
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_overdue",
+        "title": "Get overdue transactions",
+        "description": "Return overdue (vencido) transactions from the active report, sorted by due date ascending.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "description": "Max rows to return (default 25).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_transactions",
+        "title": "List transactions",
+        "description": "List payment transactions from the active report with optional filters. Returns up to 100 rows.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "status": {
+              "description": "Filter by payment status.",
+              "type": "string",
+              "enum": [
+                "pago",
+                "aberto",
+                "vencido"
+              ]
+            },
+            "fornecedor": {
+              "description": "Filter by supplier name (ILIKE).",
+              "type": "string"
+            },
+            "documento": {
+              "description": "Filter by document number (ILIKE).",
+              "type": "string"
+            },
+            "from": {
+              "description": "ISO date lower bound on vencimento.",
+              "type": "string"
+            },
+            "to": {
+              "description": "ISO date upper bound on vencimento.",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Max rows to return (default 50).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
