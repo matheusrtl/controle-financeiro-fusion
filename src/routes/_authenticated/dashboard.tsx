@@ -22,8 +22,10 @@ import {
 } from "recharts";
 import {
   ArrowDownCircle, ArrowUpCircle, Wallet, AlertTriangle, CheckCircle2, Clock,
-  Search, Download, ChevronLeft, ChevronRight,
+  Search, Download, ChevronLeft, ChevronRight, Settings2,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
