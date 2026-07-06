@@ -67,7 +67,10 @@ function DashboardPage() {
   const facetsFn = useServerFn(getFacets);
 
   const kpis = useQuery({ queryKey: ["kpis", filters], queryFn: () => kpisFn({ data: filters }) });
-  const series = useQuery({ queryKey: ["series", filters, granularity], queryFn: () => seriesFn({ data: { granularity, filters } }) });
+  const series = useQuery({
+    queryKey: ["series", filters, granularity, opening],
+    queryFn: () => seriesFn({ data: { granularity, filters, openingBalance: opening.value || 0, openingDate: opening.date || undefined } }),
+  });
   const alerts = useQuery({ queryKey: ["alerts", filters], queryFn: () => alertsFn({ data: filters }) });
   const byCC = useQuery({ queryKey: ["breakdown-cc", filters], queryFn: () => breakdownFn({ data: { dimension: "centro_custo", filters, limit: 8 } }) });
   const byConta = useQuery({ queryKey: ["breakdown-conta", filters], queryFn: () => breakdownFn({ data: { dimension: "conta", filters, limit: 8 } }) });
