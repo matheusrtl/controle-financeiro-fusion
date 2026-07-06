@@ -130,36 +130,46 @@ function DashboardPage() {
       {/* Chart + alerts */}
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
         <Card className="p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-bold">Fluxo de Caixa</h2>
-              <p className="text-xs text-muted-foreground">Receber, Pagar e Saldo acumulado</p>
+              <p className="text-xs text-muted-foreground">
+                Receber, Pagar (barras · esquerda) e Saldo acumulado (linha · direita)
+                {opening.date && opening.value ? ` · Saldo inicial ${formatBRL(opening.value)} em ${formatDateBR(opening.date)}` : ""}
+              </p>
             </div>
-            <Tabs value={granularity} onValueChange={(v) => setGranularity(v as any)}>
-              <TabsList>
-                <TabsTrigger value="day">Dia</TabsTrigger>
-                <TabsTrigger value="week">Semana</TabsTrigger>
-                <TabsTrigger value="month">Mês</TabsTrigger>
-                <TabsTrigger value="year">Ano</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex items-center gap-2">
+              <OpeningBalancePopover opening={opening} onSave={saveOpening} />
+              <Tabs value={granularity} onValueChange={(v) => setGranularity(v as any)}>
+                <TabsList>
+                  <TabsTrigger value="day">Dia</TabsTrigger>
+                  <TabsTrigger value="week">Semana</TabsTrigger>
+                  <TabsTrigger value="month">Mês</TabsTrigger>
+                  <TabsTrigger value="year">Ano</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
           </div>
           <div className="h-[340px]">
             <ResponsiveContainer>
               <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="label" tick={{ fill: "var(--muted-foreground)", fontSize: 12 }} />
-                <YAxis tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                <YAxis yAxisId="left" tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
+                  tickFormatter={(v) => Intl.NumberFormat("pt-BR", { notation: "compact" }).format(v)} />
+                <YAxis yAxisId="right" orientation="right"
+                  tick={{ fill: "#1565C0", fontSize: 12 }}
                   tickFormatter={(v) => Intl.NumberFormat("pt-BR", { notation: "compact" }).format(v)} />
                 <RTooltip content={<ChartTooltip />} />
                 <Legend />
-                <Bar dataKey="receber" name="Receber" fill="#2E7D32" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="pagar" name="Pagar" fill="#D32F2F" radius={[4, 4, 0, 0]} />
-                <Line dataKey="saldo" name="Saldo" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 3 }} />
+                <Bar yAxisId="left" dataKey="receber" name="Receber" fill="#2E7D32" radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="left" dataKey="pagar" name="Pagar" fill="#D32F2F" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" dataKey="saldo" name="Saldo" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         </Card>
+
 
         <Card className="p-4">
           <h2 className="mb-3 text-lg font-bold">Alertas</h2>
