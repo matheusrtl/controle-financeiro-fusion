@@ -115,6 +115,8 @@ export const getCashflowSeries = createServerFn({ method: "POST" })
   .inputValidator((raw) => z.object({
     granularity: z.enum(["day", "week", "month", "year"]).default("month"),
     filters: FiltersSchema,
+    openingBalance: z.number().optional(),
+    openingDate: z.string().optional(),
   }).parse(raw ?? {}))
   .handler(async ({ data, context }) => {
     const rows = await loadActiveTransactions(context.supabase, data.filters);
@@ -133,6 +135,7 @@ export const getCashflowSeries = createServerFn({ method: "POST" })
     for (const r of rows) {
       const anchor = r.pagamento ?? r.vencimento;
       if (!anchor) continue;
+      if (data.openingDate && anchor < data.openingDate) continue;
       const b = bucketOf(anchor);
       const cur = buckets.get(b) ?? { bucket: b, receber: 0, pagar: 0, qtd: 0 };
       cur.receber += Number(r.valor_pago);
@@ -141,12 +144,13 @@ export const getCashflowSeries = createServerFn({ method: "POST" })
       buckets.set(b, cur);
     }
     const arr = [...buckets.values()].sort((a, b) => a.bucket.localeCompare(b.bucket));
-    let saldo = 0;
+    let saldo = Number(data.openingBalance ?? 0);
     return arr.map((b) => {
       saldo += b.receber - b.pagar;
       return { ...b, diferenca: b.receber - b.pagar, saldo };
     });
   });
+
 
 // Alerts
 export const getAlerts = createServerFn({ method: "POST" })
