@@ -46,6 +46,18 @@ function DashboardPage() {
   const [granularity, setGranularity] = useState<"day" | "week" | "month" | "year">("month");
   const [page, setPage] = useState(0);
   const [detail, setDetail] = useState<any | null>(null);
+  const [opening, setOpening] = useState<{ value: number; date: string }>(() => {
+    if (typeof window === "undefined") return { value: 0, date: "" };
+    try {
+      const raw = localStorage.getItem("fusion:opening");
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return { value: 0, date: "" };
+  });
+  const saveOpening = (v: { value: number; date: string }) => {
+    setOpening(v);
+    try { localStorage.setItem("fusion:opening", JSON.stringify(v)); } catch {}
+  };
 
   const kpisFn = useServerFn(getKpis);
   const seriesFn = useServerFn(getCashflowSeries);
