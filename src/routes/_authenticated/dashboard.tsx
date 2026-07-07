@@ -342,19 +342,25 @@ function KpiCard({ title, value, tone, icon, breakdown, badge, big }: {
     warning: "text-[color:var(--warning)] bg-[color:var(--warning)]/10",
   }[tone];
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-      <Card className="p-4 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-shadow">
-        <div className="flex items-center gap-2">
-          <div className={`inline-flex h-8 w-8 items-center justify-center rounded-md ${toneCls}`}>{icon}</div>
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</span>
-          {badge && <Badge variant="outline" className="ml-auto text-[10px]">{badge}</Badge>}
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="h-full">
+      <Card className="flex h-full flex-col p-4 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-shadow">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${toneCls}`}>{icon}</div>
+          <span className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</span>
+          {badge && <Badge variant="outline" className="ml-auto shrink-0 text-[10px]">{badge}</Badge>}
         </div>
-        <div className={`mt-2 font-bold tabular-nums ${big ? "text-2xl" : "text-xl"}`}>{formatBRL(value)}</div>
+        <div
+          className={`mt-2 font-bold tabular-nums leading-tight break-words ${big ? "text-xl xl:text-2xl" : "text-lg xl:text-xl"}`}
+          title={formatBRL(value)}
+        >
+          {formatBRL(value)}
+        </div>
         {breakdown && (
           <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
             {breakdown.map(([k, v]) => (
-              <div key={k} className="flex justify-between">
-                <span>{k}</span><span className="tabular-nums text-foreground">{formatBRL(v ?? 0)}</span>
+              <div key={k} className="flex justify-between gap-1 min-w-0">
+                <span className="shrink-0">{k}</span>
+                <span className="truncate tabular-nums text-foreground" title={formatBRL(v ?? 0)}>{formatBRL(v ?? 0)}</span>
               </div>
             ))}
           </div>
@@ -363,6 +369,7 @@ function KpiCard({ title, value, tone, icon, breakdown, badge, big }: {
     </motion.div>
   );
 }
+
 
 function AlertSection({ title, tone, items }: { title: string; tone: "destructive" | "warning"; items: { key: string; primary: string; secondary: string; value: number }[] }) {
   const toneCls = tone === "destructive" ? "text-[color:var(--destructive)]" : "text-[color:var(--warning)]";
