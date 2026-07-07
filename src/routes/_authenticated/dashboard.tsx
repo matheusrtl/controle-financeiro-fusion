@@ -432,18 +432,25 @@ function Row({ label, value, color }: { label: string; value: string; color: str
   );
 }
 
-function OpeningBalancePopover({ opening, onSave }: { opening: { value: number; date: string }; onSave: (v: { value: number; date: string }) => void }) {
+function OpeningBalancePopover({ opening, onSave, compact }: { opening: { value: number; date: string }; onSave: (v: { value: number; date: string }) => void; compact?: boolean }) {
   const [value, setValue] = useState(String(opening.value ?? 0));
   const [date, setDate] = useState(opening.date ?? "");
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
-          <Settings2 className="h-4 w-4" />
-          Saldo inicial
-        </Button>
+        {compact ? (
+          <Button variant="ghost" size="icon" className="ml-auto h-7 w-7 shrink-0" title="Configurar saldo inicial">
+            <Settings2 className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" className="gap-2">
+            <Settings2 className="h-4 w-4" />
+            Saldo inicial
+          </Button>
+        )}
       </PopoverTrigger>
+
       <PopoverContent align="end" className="w-72 space-y-3">
         <div>
           <h4 className="text-sm font-semibold">Saldo inicial</h4>
