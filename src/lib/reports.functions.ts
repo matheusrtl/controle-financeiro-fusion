@@ -125,7 +125,7 @@ export const importReport = createServerFn({ method: "POST" })
     let minDate: string | null = null;
     let maxDate: string | null = null;
 
-    const parsed = rows.map((r) => {
+    const parsed = cleanRows.map((r) => {
       const emissao = parseDate(pick(r, ["Emissão", "Emissao"]));
       const vencimento = parseDate(pick(r, ["Vencimento"]));
       const pagamento = parseDate(pick(r, ["Pagamento"]));
