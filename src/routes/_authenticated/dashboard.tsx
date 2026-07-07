@@ -109,23 +109,31 @@ function DashboardPage() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-        <KpiCard title="Receber" value={kpis.data?.receber.total} tone="success" icon={<ArrowDownCircle className="h-4 w-4" />}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <KpiCard title="Recebido / Pago" value={kpis.data?.receber.total} tone="success" icon={<ArrowDownCircle className="h-4 w-4" />}
           breakdown={[
             ["Hoje", kpis.data?.receber.hoje], ["Amanhã", kpis.data?.receber.amanha],
             ["7 dias", kpis.data?.receber.d7], ["30 dias", kpis.data?.receber.d30],
           ]} />
-        <KpiCard title="Pagar" value={kpis.data?.pagar.total} tone="destructive" icon={<ArrowUpCircle className="h-4 w-4" />}
+        <KpiCard title="A Pagar" value={kpis.data?.pagar.total} tone="destructive" icon={<ArrowUpCircle className="h-4 w-4" />}
           breakdown={[
             ["Hoje", kpis.data?.pagar.hoje], ["Amanhã", kpis.data?.pagar.amanha],
             ["7 dias", kpis.data?.pagar.d7], ["30 dias", kpis.data?.pagar.d30],
           ]} />
-        <KpiCard title="Saldo Projetado" value={kpis.data?.saldo} tone="info" icon={<Wallet className="h-4 w-4" />} big />
-        <KpiCard title="Em Aberto" value={kpis.data?.emAberto} tone="warning" icon={<Clock className="h-4 w-4" />} big />
+        <SaldoPrevistoCard
+          opening={opening}
+          pago={kpis.data?.pago ?? 0}
+          vencido={kpis.data?.vencidos.total ?? 0}
+          aVencer={kpis.data?.aVencer?.total ?? 0}
+          onEditOpening={saveOpening}
+        />
+        <KpiCard title="A Vencer" value={kpis.data?.aVencer?.total} tone="warning" icon={<Clock className="h-4 w-4" />}
+          badge={`${kpis.data?.aVencer?.count ?? 0} títulos`} big />
         <KpiCard title="Pago" value={kpis.data?.pago} tone="success" icon={<CheckCircle2 className="h-4 w-4" />} big />
         <KpiCard title="Vencidos" value={kpis.data?.vencidos.total} tone="destructive" icon={<AlertTriangle className="h-4 w-4" />}
           badge={`${kpis.data?.vencidos.count ?? 0} títulos`} big />
       </div>
+
 
       {/* Chart + alerts */}
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
