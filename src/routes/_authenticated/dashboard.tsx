@@ -202,32 +202,9 @@ function DashboardPage() {
 
       {/* Secondary charts grid */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className="p-4">
-          <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Distribuição por Centro de Custo</h3>
-          <div className="h-[260px]">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={byCC.data ?? []} dataKey="total" nameKey="key" outerRadius={90} label={(e) => e.key}>
-                  {(byCC.data ?? []).map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                </Pie>
-                <RTooltip formatter={(v: number) => formatBRL(v)} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Distribuição por Conta</h3>
-          <div className="h-[260px]">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={byConta.data ?? []} dataKey="total" nameKey="key" outerRadius={90} label={(e) => e.key}>
-                  {(byConta.data ?? []).map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                </Pie>
-                <RTooltip formatter={(v: number) => formatBRL(v)} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+        <SmartPie title="Distribuição por Centro de Custo" data={byCC.data ?? []} />
+        <SmartPie title="Distribuição por Conta" data={byConta.data ?? []} />
+
         <Card className="p-4 lg:col-span-2">
           <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Top 10 Fornecedores</h3>
           <div className="h-[300px]">
