@@ -57,11 +57,13 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function statusFor(pagamento: string | null, vencimento: string | null, valorAberto: number): "pago" | "aberto" | "vencido" {
-  if (valorAberto <= 0.001) return "pago";
+function statusFor(pagamento: string | null, vencimento: string | null, _valorAberto: number): "pago" | "aberto" | "vencido" {
+  // Regra de negócio: Pago se possui Data de Pagamento; senão em aberto (vencido se venc < hoje).
+  if (pagamento) return "pago";
   if (vencimento && vencimento < todayISO()) return "vencido";
   return "aberto";
 }
+
 
 // ============================================================
 // Import a new report (replaces the active one)
@@ -89,9 +91,17 @@ export const importReport = createServerFn({ method: "POST" })
     const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
     if (rows.length === 0) throw new Error("Nenhuma linha encontrada.");
 
+    // Filtra a linha de totalização e qualquer linha sem fornecedor
+    const cleanRows = rows.filter((r) => {
+      const forn = String(pick(r, ["Fornecedor - Nome", "Fornecedor"]) ?? "").trim();
+      return forn.length > 0;
+    });
+    if (cleanRows.length === 0) throw new Error("Nenhum lançamento válido encontrado (todas as linhas estão sem fornecedor).");
+
     const headers = Object.keys(rows[0]).map((h) => h.trim().toLowerCase());
     const missing = REQUIRED_COLUMNS.filter((c) => !headers.includes(c.toLowerCase()));
     if (missing.length) throw new Error(`Colunas obrigatórias ausentes: ${missing.join(", ")}`);
+
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -115,7 +125,7 @@ export const importReport = createServerFn({ method: "POST" })
     let minDate: string | null = null;
     let maxDate: string | null = null;
 
-    const parsed = rows.map((r) => {
+    const parsed = cleanRows.map((r) => {
       const emissao = parseDate(pick(r, ["Emissão", "Emissao"]));
       const vencimento = parseDate(pick(r, ["Vencimento"]));
       const pagamento = parseDate(pick(r, ["Pagamento"]));

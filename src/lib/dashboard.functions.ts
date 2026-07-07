@@ -50,8 +50,18 @@ async function loadActiveTransactions(supabase: any, filters: Filters): Promise<
     if (data.length < PAGE) break;
     from += PAGE;
   }
-  return all;
+  // Ignora linhas sem fornecedor (linha de totalização de planilhas antigas)
+  const cleaned = all.filter((r) => r.fornecedor && String(r.fornecedor).trim().length > 0);
+  const today = todayISO();
+  // Recalcula status conforme regra de negócio atual (pagamento = pago)
+  for (const r of cleaned) {
+    if (r.pagamento) r.status = "pago";
+    else if (r.vencimento && r.vencimento < today) r.status = "vencido";
+    else r.status = "aberto";
+  }
+  return cleaned;
 }
+
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function addDays(iso: string, days: number) {
@@ -78,9 +88,12 @@ export const getKpis = createServerFn({ method: "POST" })
     const sumOpen = (arr: TxRow[]) => arr.reduce((s, r) => s + Number(r.valor_aberto), 0);
     const sumPaid = (arr: TxRow[]) => arr.reduce((s, r) => s + Number(r.valor_pago), 0);
 
-    const openRows = rows.filter((r) => r.status !== "pago");
-    const paidRows = rows.filter((r) => r.status === "pago");
-    const vencidos = rows.filter((r) => r.status === "vencido");
+    // Regra: pago se possui Data de Pagamento; caso contrário em aberto.
+    // Dentro dos em aberto: vencido se vencimento < hoje; caso contrário a vencer.
+    const paidRows = rows.filter((r) => !!r.pagamento);
+    const openRows = rows.filter((r) => !r.pagamento);
+    const vencidos = openRows.filter((r) => r.vencimento && r.vencimento < today);
+    const aVencer = openRows.filter((r) => !r.vencimento || r.vencimento >= today);
 
     const pagarHoje = openRows.filter((r) => r.vencimento === today);
     const pagarAmanha = openRows.filter((r) => r.vencimento === tomorrow);
@@ -104,9 +117,11 @@ export const getKpis = createServerFn({ method: "POST" })
       },
       saldo: sumPaid(paidRows) - sumOpen(openRows),
       emAberto: sumOpen(openRows),
+      aVencer: { count: aVencer.length, total: sumOpen(aVencer) },
       pago: sumPaid(paidRows),
       vencidos: { count: vencidos.length, total: sumOpen(vencidos) },
     };
+
   });
 
 // Cashflow series
@@ -234,7 +249,7 @@ export const listTransactions = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: rep } = await context.supabase.from("reports").select("id").eq("status", "active").maybeSingle();
     if (!rep) return { rows: [], total: 0 };
-    let q = context.supabase.from("transactions").select("*", { count: "exact" }).eq("report_id", rep.id);
+    let q = context.supabase.from("transactions").select("*", { count: "exact" }).eq("report_id", rep.id).not("fornecedor", "is", null);
     const f = data.filters;
     if (f.fornecedor) q = q.ilike("fornecedor", `%${f.fornecedor}%`);
     if (f.centro_custo) q = q.eq("centro_custo", f.centro_custo);
