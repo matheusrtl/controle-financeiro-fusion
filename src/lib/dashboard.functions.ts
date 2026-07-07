@@ -249,7 +249,7 @@ export const listTransactions = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: rep } = await context.supabase.from("reports").select("id").eq("status", "active").maybeSingle();
     if (!rep) return { rows: [], total: 0 };
-    let q = context.supabase.from("transactions").select("*", { count: "exact" }).eq("report_id", rep.id);
+    let q = context.supabase.from("transactions").select("*", { count: "exact" }).eq("report_id", rep.id).not("fornecedor", "is", null);
     const f = data.filters;
     if (f.fornecedor) q = q.ilike("fornecedor", `%${f.fornecedor}%`);
     if (f.centro_custo) q = q.eq("centro_custo", f.centro_custo);
