@@ -57,11 +57,13 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function statusFor(pagamento: string | null, vencimento: string | null, valorAberto: number): "pago" | "aberto" | "vencido" {
-  if (valorAberto <= 0.001) return "pago";
+function statusFor(pagamento: string | null, vencimento: string | null, _valorAberto: number): "pago" | "aberto" | "vencido" {
+  // Regra de negócio: Pago se possui Data de Pagamento; senão em aberto (vencido se venc < hoje).
+  if (pagamento) return "pago";
   if (vencimento && vencimento < todayISO()) return "vencido";
   return "aberto";
 }
+
 
 // ============================================================
 // Import a new report (replaces the active one)
