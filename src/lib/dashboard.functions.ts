@@ -78,9 +78,12 @@ export const getKpis = createServerFn({ method: "POST" })
     const sumOpen = (arr: TxRow[]) => arr.reduce((s, r) => s + Number(r.valor_aberto), 0);
     const sumPaid = (arr: TxRow[]) => arr.reduce((s, r) => s + Number(r.valor_pago), 0);
 
-    const openRows = rows.filter((r) => r.status !== "pago");
-    const paidRows = rows.filter((r) => r.status === "pago");
-    const vencidos = rows.filter((r) => r.status === "vencido");
+    // Regra: pago se possui Data de Pagamento; caso contrário em aberto.
+    // Dentro dos em aberto: vencido se vencimento < hoje; caso contrário a vencer.
+    const paidRows = rows.filter((r) => !!r.pagamento);
+    const openRows = rows.filter((r) => !r.pagamento);
+    const vencidos = openRows.filter((r) => r.vencimento && r.vencimento < today);
+    const aVencer = openRows.filter((r) => !r.vencimento || r.vencimento >= today);
 
     const pagarHoje = openRows.filter((r) => r.vencimento === today);
     const pagarAmanha = openRows.filter((r) => r.vencimento === tomorrow);
@@ -104,9 +107,11 @@ export const getKpis = createServerFn({ method: "POST" })
       },
       saldo: sumPaid(paidRows) - sumOpen(openRows),
       emAberto: sumOpen(openRows),
+      aVencer: { count: aVencer.length, total: sumOpen(aVencer) },
       pago: sumPaid(paidRows),
       vencidos: { count: vencidos.length, total: sumOpen(vencidos) },
     };
+
   });
 
 // Cashflow series
