@@ -50,8 +50,18 @@ async function loadActiveTransactions(supabase: any, filters: Filters): Promise<
     if (data.length < PAGE) break;
     from += PAGE;
   }
-  return all;
+  // Ignora linhas sem fornecedor (linha de totalização de planilhas antigas)
+  const cleaned = all.filter((r) => r.fornecedor && String(r.fornecedor).trim().length > 0);
+  const today = todayISO();
+  // Recalcula status conforme regra de negócio atual (pagamento = pago)
+  for (const r of cleaned) {
+    if (r.pagamento) r.status = "pago";
+    else if (r.vencimento && r.vencimento < today) r.status = "vencido";
+    else r.status = "aberto";
+  }
+  return cleaned;
 }
+
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
 function addDays(iso: string, days: number) {
