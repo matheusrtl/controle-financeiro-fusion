@@ -482,3 +482,145 @@ function exportCsv(rows: any[]) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+type Scope = "none" | "vencido" | "aberto" | "ambos";
+
+function SaldoPrevistoCard({
+  opening, pago, vencido, aVencer, onEditOpening,
+}: {
+  opening: { value: number; date: string };
+  pago: number; vencido: number; aVencer: number;
+  onEditOpening: (v: { value: number; date: string }) => void;
+}) {
+  const [scope, setScope] = useState<Scope>(() => {
+    if (typeof window === "undefined") return "ambos";
+    return (localStorage.getItem("fusion:saldoScope") as Scope) || "ambos";
+  });
+  const setScopePersist = (s: Scope) => {
+    setScope(s);
+    try { localStorage.setItem("fusion:saldoScope", s); } catch {}
+  };
+  const considerado =
+    (scope === "vencido" || scope === "ambos" ? vencido : 0) +
+    (scope === "aberto" || scope === "ambos" ? aVencer : 0);
+  const saldo = (opening.value || 0) - pago - considerado;
+  const positivo = saldo >= 0;
+
+  const scopeLabel: Record<Scope, string> = {
+    none: "somente pagos",
+    vencido: "pagos + vencidos",
+    aberto: "pagos + a vencer",
+    ambos: "pagos + vencidos + a vencer",
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="h-full">
+      <Card className="flex h-full flex-col p-4 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-shadow">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-primary bg-primary/10">
+            <Wallet className="h-4 w-4" />
+          </div>
+          <span className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saldo Previsto</span>
+          <OpeningBalancePopover opening={opening} onSave={onEditOpening} compact />
+        </div>
+        <div
+          className={`mt-2 text-xl xl:text-2xl font-bold tabular-nums leading-tight break-words ${positivo ? "text-[color:var(--success)]" : "text-[color:var(--destructive)]"}`}
+          title={formatBRL(saldo)}
+        >
+          {formatBRL(saldo)}
+        </div>
+        <p className="mt-1 text-[10px] text-muted-foreground truncate" title={`Inicial ${formatBRL(opening.value || 0)}${opening.date ? " · " + formatDateBR(opening.date) : ""}`}>
+          {opening.value ? `Inicial ${formatBRL(opening.value)}` : "Defina o saldo inicial"} · {scopeLabel[scope]}
+        </p>
+        <div className="mt-3 grid grid-cols-4 gap-1">
+          {(["none", "vencido", "aberto", "ambos"] as Scope[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => setScopePersist(s)}
+              className={`rounded-md border px-1 py-1 text-[10px] font-semibold uppercase transition-colors ${
+                scope === s ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"
+              }`}
+              title={scopeLabel[s]}
+            >
+              {s === "none" ? "Pagos" : s === "vencido" ? "+Venc" : s === "aberto" ? "+Aberto" : "Todos"}
+            </button>
+          ))}
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
+const PIE_PALETTE = [
+  "#1565C0", "#2E7D32", "#F57C00", "#8E24AA", "#00838F",
+  "#C62828", "#455A64", "#6D4C41", "#5E35B1", "#EF6C00",
+  "#00695C", "#AD1457",
+];
+
+function SmartPie({ title, data, maxSlices = 8 }: { title: string; data: { key: string; total: number }[]; maxSlices?: number }) {
+  const grouped = useMemo(() => {
+    const clean = (data ?? []).filter((d) => d.total > 0).sort((a, b) => b.total - a.total);
+    if (clean.length <= maxSlices) return clean;
+    const head = clean.slice(0, maxSlices - 1);
+    const tail = clean.slice(maxSlices - 1);
+    const outros = tail.reduce((s, r) => s + r.total, 0);
+    return [...head, { key: `Outros (${tail.length})`, total: outros }];
+  }, [data, maxSlices]);
+  const total = grouped.reduce((s, r) => s + r.total, 0) || 1;
+
+  return (
+    <Card className="p-4">
+      <h3 className="mb-3 text-sm font-semibold text-muted-foreground">{title}</h3>
+      {grouped.length === 0 ? (
+        <div className="grid h-[260px] place-items-center text-xs text-muted-foreground">Sem dados</div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_180px]">
+          <div className="h-[260px]">
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie
+                  data={grouped}
+                  dataKey="total"
+                  nameKey="key"
+                  innerRadius={55}
+                  outerRadius={95}
+                  paddingAngle={1.5}
+                  stroke="var(--card)"
+                  strokeWidth={2}
+                >
+                  {grouped.map((_, i) => <Cell key={i} fill={PIE_PALETTE[i % PIE_PALETTE.length]} />)}
+                </Pie>
+                <RTooltip
+                  content={({ active, payload }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const p = payload[0];
+                    const pct = ((p.value / total) * 100).toFixed(1);
+                    return (
+                      <div className="rounded-lg border bg-card p-2 text-xs shadow-lg">
+                        <div className="font-semibold">{p.name}</div>
+                        <div className="tabular-nums">{formatBRL(p.value)} · {pct}%</div>
+                      </div>
+                    );
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <ul className="max-h-[260px] overflow-auto space-y-1 text-xs">
+            {grouped.map((g, i) => {
+              const pct = ((g.total / total) * 100).toFixed(1);
+              return (
+                <li key={g.key} className="flex items-center gap-2 min-w-0">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: PIE_PALETTE[i % PIE_PALETTE.length] }} />
+                  <span className="truncate flex-1" title={g.key}>{g.key}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{pct}%</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
+
