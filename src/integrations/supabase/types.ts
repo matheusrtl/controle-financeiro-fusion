@@ -63,6 +63,7 @@ export type Database = {
           pagamento: string | null
           report_id: string
           status: string
+          sugestao_vencimento: string | null
           valor: number
           valor_aberto: number
           valor_pago: number
@@ -84,6 +85,7 @@ export type Database = {
           pagamento?: string | null
           report_id: string
           status?: string
+          sugestao_vencimento?: string | null
           valor?: number
           valor_aberto?: number
           valor_pago?: number
@@ -105,6 +107,7 @@ export type Database = {
           pagamento?: string | null
           report_id?: string
           status?: string
+          sugestao_vencimento?: string | null
           valor?: number
           valor_aberto?: number
           valor_pago?: number
