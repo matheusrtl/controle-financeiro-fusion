@@ -1,49 +1,61 @@
-## Diagnóstico
+# Plano
 
-Rodei os checks e o que está acontecendo hoje:
+Três mudanças que se conectam: o dashboard vira 100% "contas a pagar", os filtros de período viram globais, e cada lançamento ganha uma "Sugestão de Vencimento" editável que passa a governar toda a lógica financeira.
 
-1. **Menu superior já existe** no `AppShell` (Dashboard / Upload / Histórico / Usuários / Sair), mas os itens **Upload** e **Usuários** só aparecem para admin. Isso está correto — o problema é que a conta que você está usando (`matheusjustino@fusion.log.br`) **não tem role admin** no banco. Só `admin@fusion.log.br` tem.
-2. **Bloqueio de upload**: a mensagem "somente administradores podem importar" vem do servidor. Quem não é admin não consegue mesmo — inclusive `matheusjustino`. Precisamos (a) dar acesso admin também ao `matheusjustino` (ou deixar isso claro), e (b) fazer a página `/upload` mostrar um bloqueio visual amigável antes de tentar enviar, em vez de deixar o usuário selecionar arquivo e receber erro.
-3. **Planilha `base_pagamentos.xlsx`** conferida: os 16 cabeçalhos batem **exatamente** com o que o parser já espera (Documento, Fornecedor - Nome, Emissão, Vencimento, Pagamento, Valor, Multa, Juros, Desconto, Valor Pago, Valor em Aberto, Valor Total do Título, Centro de Custo, Observação da Parcela, Observação do Lançamento, Conta). O parser vai ler sem ajuste de mapeamento.
-4. **Falta CSV** no dropzone (você pediu `.xlsx`, `.xls`, `.csv`) e falta validação de colunas obrigatórias antes de importar.
-5. **Deduplicação**: hoje cada upload arquiva o relatório anterior e insere tudo de novo — não gera duplicata "real", mas dentro do mesmo arquivo linhas idênticas entram duas vezes. Vou deduplicar pela combinação `Documento + Fornecedor + Vencimento + Valor` dentro do lote.
+## 1. Remover completamente a lógica de "Recebido"
 
-## O que vou implementar
+**Backend (`src/lib/dashboard.functions.ts`)**
+- Em `getKpis`: remover o bloco `receber` do retorno. Substituir por um novo campo `pago` calculado com base no filtro de período ativo (o mesmo intervalo `from`/`to` usado na query). Ele mostrará a soma de `valor_pago` das transações cuja `pagamento` cai dentro do período. Remover blocos `hoje/amanha/d7/d30` do receber; para o card "Pago" a exibição usará o total do período filtrado.
+- Em `getCashflowSeries`: remover `receber` dos buckets. Retornar só `pagar` (barras) e `saldo`. Regra de saldo: começa em `openingBalance` na `openingDate` e **apenas decresce** — `saldo = saldo - pagar` a cada bucket. Nunca soma entradas.
+- Em `getAlerts` e `getBreakdown`: remover qualquer agregação que use `valor_pago` como "entrada" — Breakdown passa a somar apenas `valor_aberto` (despesa restante) + despesas pagas (saída de caixa histórica), sem tratá-las como receita.
 
-### 1. Permissões
-- Promover `matheusjustino@fusion.log.br` a admin (insert em `user_roles`) para você conseguir usar a conta que já está logada.
-- Manter `admin@fusion.log.br` também como admin.
-- Nenhuma mudança em RLS/policies — quem não é admin continua bloqueado no server.
+**Frontend (`src/routes/_authenticated/dashboard.tsx`)**
+- Remover o card "Recebido / Pago" e substituir pelo card **"Pago no período"**: um único valor = soma dos `valor_pago` cujo `pagamento` está dentro do filtro global (dia/semana/mês/ano/intervalo). Sem subdivisões hoje/amanhã/7d/30d.
+- No gráfico principal: remover a barra verde "Receber". Ficam só a barra "Pagar" (esquerda) e a linha "Saldo" (direita, monotonicamente decrescente).
+- Remover a seção "Top 10 a receber" dos alertas (se houver referência).
+- Legenda/subtítulo do gráfico: "Despesas (barras) e Saldo projetado (linha)".
 
-### 2. Menu superior (sem redesenho)
-- Manter o `AppShell` atual (já é fixo no topo, com logo, relatório ativo e navegação).
-- Ajuste pequeno: itens `Upload` e `Usuários` aparecem em estado desabilitado com tooltip "Somente administradores" para não-admins, em vez de sumirem — assim fica claro que existem.
+## 2. Filtro de período global e sincronizado
 
-### 3. Tela `/upload`
-- Aceitar também `.csv` no dropzone (`text/csv`) além de `.xlsx` e `.xls`.
-- Gate visual: se `isCurrentUserAdmin` retornar `false`, mostrar card "Acesso restrito – somente administradores" com botão "Voltar ao dashboard", sem dropzone.
-- Skeleton enquanto a role carrega (evita flash).
-- Após parse: validar cabeçalhos obrigatórios (`Documento`, `Fornecedor - Nome`, `Vencimento`, `Valor`); se faltar, mostrar toast com a lista exata de colunas ausentes e não enviar.
-- Toast de sucesso com contagem de linhas + período detectado.
+- Elevar `granularity` + intervalo `from`/`to` ao nível de filtro global. Um único seletor de período (Dia/Semana/Mês/Ano/Personalizado) no topo, ao lado dos filtros existentes, calcula automaticamente `from` e `to`:
+  - Dia = hoje; Semana = semana corrente; Mês = mês corrente; Ano = ano corrente; Personalizado = mantém os inputs de data.
+- Remover o `Tabs` de granularidade do header do gráfico; ele passa a refletir o período global.
+- Todas as `useQuery` (kpis, series, alerts, breakdown-cc, breakdown-conta, top-fornec, list) já recebem `filters` — garantir que `granularity` também entre no `filters` (ou num objeto `period`) e que **todas** as chaves incluam o mesmo objeto, para que uma troca de período invalide e recarregue tudo simultaneamente.
+- Nenhum componente pode manter estado próprio de data/granularidade.
 
-### 4. Server fn `importReport`
-- Aceitar payload `base64` para `.xlsx/.xls` (já faz) e `csvText` para `.csv` (novo caminho — usa `XLSX.read(csv, { type: "string" })`).
-- Validar presença dos cabeçalhos obrigatórios; se faltar, `throw` com mensagem clara.
-- Deduplicar linhas do mesmo lote por `Documento|Fornecedor|Vencimento|Valor`.
-- Continuar arquivando o relatório ativo antes de inserir o novo (comportamento atual está correto para "substituir base").
+## 3. Coluna "Sugestão Vencimento" editável e usada em toda a lógica
 
-### 5. Nada de mudança em dashboard, histórico, gráficos, layout ou temas.
+**Banco (migration)**
+- Adicionar coluna `sugestao_vencimento DATE NULL` em `public.transactions`.
+- Ajustar policies existentes para permitir `UPDATE` apenas dessa coluna (nova policy `UPDATE ... USING (true) WITH CHECK (true)` restrita a authenticated; opcionalmente via `GRANT UPDATE (sugestao_vencimento)` em vez de update total, para blindar as outras colunas).
+- Não backfill: `sugestao_vencimento` fica `NULL` até o usuário editar; o código usa `COALESCE(sugestao_vencimento, vencimento)`.
+
+**Backend**
+- Novo server function `updateSugestaoVencimento({ id, date | null })` que faz o update pontual.
+- Em **toda** a lógica de dashboard (`getKpis`, `getCashflowSeries`, `getAlerts`, `getBreakdown`, filtros `from/to` que hoje batem em `vencimento`): substituir referências a `r.vencimento` por `effectiveVencimento = r.sugestao_vencimento ?? r.vencimento`. O cálculo de status "vencido" também passa a usar esse valor efetivo.
+- `listTransactions` retorna o novo campo. Filtro por data `from/to` passa a filtrar pelo vencimento efetivo (via `.or()` no PostgREST cobrindo `sugestao_vencimento` quando presente e `vencimento` quando null).
+
+**Frontend (tabela de Lançamentos)**
+- Nova coluna **"Sugestão Vencimento"** ao lado de "Vencimento". Mostra `sugestao_vencimento ?? vencimento`.
+- Célula editável: clique abre um `Popover` com o Shadcn Datepicker (com `pointer-events-auto`). Ao salvar, chama `updateSugestaoVencimento` via `useMutation` e invalida `["kpis"], ["series"], ["alerts"], ["breakdown-*"], ["top-fornec"], ["tx"]`.
+- Botão "Restaurar" no popover: envia `date: null` para voltar a usar a data original.
+- "Vencimento" original permanece visível como referência histórica (não editável).
 
 ## Detalhes técnicos
 
-**Arquivos alterados:**
-- `src/components/AppShell.tsx` — mostrar itens admin desabilitados com tooltip quando não-admin.
-- `src/routes/_authenticated/upload.tsx` — gate visual admin, aceitar CSV, validar colunas no cliente antes de mandar, mensagens.
-- `src/lib/reports.functions.ts` — novo input `{ filename, base64?, csvText? }`, validação de colunas obrigatórias, dedupe por chave composta, mensagens de erro melhores.
-- Migration (data-only via `supabase--insert`): promover `matheusjustino@fusion.log.br` a admin.
+**Ordem de execução**
+1. Migration (adiciona coluna + policy/GRANT). Aguardar aprovação do usuário e regeneração dos types antes de tocar no código que lê `sugestao_vencimento`.
+2. Editar `dashboard.functions.ts` (remover receber, aplicar vencimento efetivo, novo `updateSugestaoVencimento`).
+3. Editar `dashboard.tsx` (novo card "Pago no período", remoção da barra Receber, filtro de período global, coluna editável).
 
-**Fora de escopo:** redesign, novos gráficos, mudanças em RLS/schema, novas rotas.
+**Impactos fora do dashboard**
+- MCP tools em `src/lib/mcp/tools/*` que retornam KPIs precisam do mesmo tratamento (usar vencimento efetivo, remover conceito de receber). Ajustar `get-kpis.ts`, `get-overdue.ts`, `list-transactions.ts`.
+- `reports.functions.ts` continua importando `valor_pago` da planilha (é saída de caixa histórica), só muda a semântica na UI/agregações.
 
-## Testes que farei ao final
-- Login com `matheusjustino@fusion.log.br` → menu superior com todos os itens ativos → abrir Upload → arrastar `base_pagamentos.xlsx` → ver toast de sucesso com contagem → Dashboard/Histórico refletindo o novo relatório.
-- Login com um usuário não-admin (criado via tela Usuários) → itens Upload/Usuários desabilitados → tentativa direta em `/upload` mostra card "Acesso restrito".
+**Saldo previsto (regra reforçada)**
+- `saldo(t) = openingBalance − Σ pagar(t' ≤ t)` para buckets ≥ `openingDate`.
+- O card "Saldo Previsto" atual deixa de somar `pago` como entrada; passa a mostrar `openingBalance − (vencidos + a vencer)` conforme o escopo escolhido.
+
+## Fora de escopo
+- Não altero identidade visual, tipografia, cores nem layout geral — apenas remoções/adições pontuais nos cards e coluna nova na tabela.
+- Não mexo em Upload, Histórico, Usuários ou Auth.
