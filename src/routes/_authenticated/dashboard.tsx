@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   getKpis, getCashflowSeries, getAlerts, getBreakdown, listTransactions, getFacets,
+  updateSugestaoVencimento,
 } from "@/lib/dashboard.functions";
 import { AppShell } from "@/components/AppShell";
 import { Card } from "@/components/ui/card";
@@ -18,11 +19,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatBRL, formatDateBR, shortMonth } from "@/lib/format";
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend,
-  PieChart, Pie, Cell, BarChart, LineChart,
+  PieChart, Pie, Cell, BarChart,
 } from "recharts";
 import {
-  ArrowDownCircle, ArrowUpCircle, Wallet, AlertTriangle, CheckCircle2, Clock,
-  Search, Download, ChevronLeft, ChevronRight, Settings2,
+  ArrowUpCircle, Wallet, AlertTriangle, CheckCircle2, Clock,
+  Search, Download, ChevronLeft, ChevronRight, Settings2, CalendarClock, RotateCcw,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
@@ -39,11 +40,37 @@ type Filters = {
   documento?: string;
 };
 
-const CHART_COLORS = ["#1565C0", "#2E7D32", "#D32F2F", "#F9A825", "#0D47A1", "#6a1b9a", "#00838f", "#c62828"];
+type PeriodPreset = "day" | "week" | "month" | "year" | "custom";
+type Period = { preset: PeriodPreset; from?: string; to?: string; granularity: "day" | "week" | "month" | "year" };
+
+function computePeriod(preset: PeriodPreset, currentFrom?: string, currentTo?: string): Period {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const d = now.getUTCDate();
+  const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  const today = iso(new Date(Date.UTC(y, m, d)));
+  if (preset === "day") return { preset, from: today, to: today, granularity: "day" };
+  if (preset === "week") {
+    const dow = new Date(Date.UTC(y, m, d)).getUTCDay(); // 0=dom
+    const start = new Date(Date.UTC(y, m, d - dow));
+    const end = new Date(Date.UTC(y, m, d - dow + 6));
+    return { preset, from: iso(start), to: iso(end), granularity: "day" };
+  }
+  if (preset === "month") {
+    const start = new Date(Date.UTC(y, m, 1));
+    const end = new Date(Date.UTC(y, m + 1, 0));
+    return { preset, from: iso(start), to: iso(end), granularity: "day" };
+  }
+  if (preset === "year") {
+    return { preset, from: `${y}-01-01`, to: `${y}-12-31`, granularity: "month" };
+  }
+  return { preset: "custom", from: currentFrom, to: currentTo, granularity: "month" };
+}
 
 function DashboardPage() {
-  const [filters, setFilters] = useState<Filters>({});
-  const [granularity, setGranularity] = useState<"day" | "week" | "month" | "year">("month");
+  const [period, setPeriod] = useState<Period>(() => computePeriod("month"));
+  const [filters, setFilters] = useState<Omit<Filters, "from" | "to">>({});
   const [page, setPage] = useState(0);
   const [detail, setDetail] = useState<any | null>(null);
   const [opening, setOpening] = useState<{ value: number; date: string }>(() => {
@@ -59,62 +86,122 @@ function DashboardPage() {
     try { localStorage.setItem("fusion:opening", JSON.stringify(v)); } catch {}
   };
 
+  // Filtro efetivo = filtros textuais + intervalo do período global.
+  const effectiveFilters: Filters = useMemo(
+    () => ({ ...filters, from: period.from, to: period.to }),
+    [filters, period]
+  );
+
   const kpisFn = useServerFn(getKpis);
   const seriesFn = useServerFn(getCashflowSeries);
   const alertsFn = useServerFn(getAlerts);
   const breakdownFn = useServerFn(getBreakdown);
   const listFn = useServerFn(listTransactions);
   const facetsFn = useServerFn(getFacets);
+  const updSugestaoFn = useServerFn(updateSugestaoVencimento);
 
-  const kpis = useQuery({ queryKey: ["kpis", filters], queryFn: () => kpisFn({ data: filters }) });
-  const series = useQuery({
-    queryKey: ["series", filters, granularity, opening],
-    queryFn: () => seriesFn({ data: { granularity, filters, openingBalance: opening.value || 0, openingDate: opening.date || undefined } }),
+  const qc = useQueryClient();
+  const mutSugestao = useMutation({
+    mutationFn: (v: { id: number; date: string | null }) => updSugestaoFn({ data: v }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kpis"] });
+      qc.invalidateQueries({ queryKey: ["series"] });
+      qc.invalidateQueries({ queryKey: ["alerts"] });
+      qc.invalidateQueries({ queryKey: ["breakdown-cc"] });
+      qc.invalidateQueries({ queryKey: ["breakdown-conta"] });
+      qc.invalidateQueries({ queryKey: ["top-fornec"] });
+      qc.invalidateQueries({ queryKey: ["tx"] });
+      toast.success("Sugestão de vencimento atualizada");
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Falha ao atualizar"),
   });
-  const alerts = useQuery({ queryKey: ["alerts", filters], queryFn: () => alertsFn({ data: filters }) });
-  const byCC = useQuery({ queryKey: ["breakdown-cc", filters], queryFn: () => breakdownFn({ data: { dimension: "centro_custo", filters, limit: 8 } }) });
-  const byConta = useQuery({ queryKey: ["breakdown-conta", filters], queryFn: () => breakdownFn({ data: { dimension: "conta", filters, limit: 8 } }) });
-  const topFornec = useQuery({ queryKey: ["top-fornec", filters], queryFn: () => breakdownFn({ data: { dimension: "fornecedor", filters, limit: 10 } }) });
-  const list = useQuery({ queryKey: ["tx", filters, page], queryFn: () => listFn({ data: { filters, page, pageSize: 25 } }) });
+
+  const kpis = useQuery({ queryKey: ["kpis", effectiveFilters], queryFn: () => kpisFn({ data: effectiveFilters }) });
+  const series = useQuery({
+    queryKey: ["series", effectiveFilters, period.granularity, opening],
+    queryFn: () => seriesFn({ data: { granularity: period.granularity, filters: effectiveFilters, openingBalance: opening.value || 0, openingDate: opening.date || undefined } }),
+  });
+  const alerts = useQuery({ queryKey: ["alerts", effectiveFilters], queryFn: () => alertsFn({ data: effectiveFilters }) });
+  const byCC = useQuery({ queryKey: ["breakdown-cc", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "centro_custo", filters: effectiveFilters, limit: 8 } }) });
+  const byConta = useQuery({ queryKey: ["breakdown-conta", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "conta", filters: effectiveFilters, limit: 8 } }) });
+  const topFornec = useQuery({ queryKey: ["top-fornec", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "fornecedor", filters: effectiveFilters, limit: 10 } }) });
+  const list = useQuery({ queryKey: ["tx", effectiveFilters, page], queryFn: () => listFn({ data: { filters: effectiveFilters, page, pageSize: 25 } }) });
   const facets = useQuery({ queryKey: ["facets"], queryFn: () => facetsFn() });
 
+  useEffect(() => { setPage(0); }, [effectiveFilters]);
+
   const chartData = useMemo(() => (series.data ?? []).map((b) => ({
-    ...b, label: granularity === "month" ? shortMonth(b.bucket) : b.bucket,
-  })), [series.data, granularity]);
+    ...b, label: period.granularity === "month" ? shortMonth(b.bucket) : b.bucket,
+  })), [series.data, period.granularity]);
+
+  const periodLabel: Record<PeriodPreset, string> = {
+    day: "Hoje", week: "Semana", month: "Mês", year: "Ano", custom: "Personalizado",
+  };
 
   return (
     <AppShell>
-      {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3 shadow-[var(--shadow-card)]">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Documento…" className="w-40 pl-8"
-            value={filters.documento ?? ""} onChange={(e) => setFilters({ ...filters, documento: e.target.value || undefined })}
-          />
+      {/* Global period + filters */}
+      <div className="mb-4 space-y-2 rounded-xl border bg-card p-3 shadow-[var(--shadow-card)]">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase text-muted-foreground">Período</span>
+          <Tabs value={period.preset} onValueChange={(v) => setPeriod(computePeriod(v as PeriodPreset, period.from, period.to))}>
+            <TabsList>
+              <TabsTrigger value="day">Dia</TabsTrigger>
+              <TabsTrigger value="week">Semana</TabsTrigger>
+              <TabsTrigger value="month">Mês</TabsTrigger>
+              <TabsTrigger value="year">Ano</TabsTrigger>
+              <TabsTrigger value="custom">Personalizado</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {period.preset === "custom" && (
+            <>
+              <Input type="date" className="w-40" value={period.from ?? ""}
+                onChange={(e) => setPeriod({ ...period, preset: "custom", from: e.target.value || undefined })} />
+              <Input type="date" className="w-40" value={period.to ?? ""}
+                onChange={(e) => setPeriod({ ...period, preset: "custom", to: e.target.value || undefined })} />
+              <FSelect label="Granularidade" value={period.granularity}
+                options={["day", "week", "month", "year"]}
+                onChange={(v) => setPeriod({ ...period, granularity: (v as any) ?? "month" })} />
+            </>
+          )}
+          {period.from && period.to && (
+            <span className="ml-auto text-xs text-muted-foreground">
+              {periodLabel[period.preset]} · {formatDateBR(period.from)} → {formatDateBR(period.to)}
+            </span>
+          )}
         </div>
-        <Input placeholder="Fornecedor…" className="w-48"
-          value={filters.fornecedor ?? ""} onChange={(e) => setFilters({ ...filters, fornecedor: e.target.value || undefined })} />
-        <FSelect label="Centro de Custo" value={filters.centro_custo} options={facets.data?.centros ?? []}
-          onChange={(v) => setFilters({ ...filters, centro_custo: v })} />
-        <FSelect label="Conta" value={filters.conta} options={facets.data?.contas ?? []}
-          onChange={(v) => setFilters({ ...filters, conta: v })} />
-        <FSelect label="Status" value={filters.status} options={["aberto", "pago", "vencido"]}
-          onChange={(v) => setFilters({ ...filters, status: v as any })} />
-        <Input type="date" className="w-40" value={filters.from ?? ""} onChange={(e) => setFilters({ ...filters, from: e.target.value || undefined })} />
-        <Input type="date" className="w-40" value={filters.to ?? ""} onChange={(e) => setFilters({ ...filters, to: e.target.value || undefined })} />
-        {Object.values(filters).some(Boolean) && (
-          <Button variant="ghost" size="sm" onClick={() => setFilters({})}>Limpar filtros</Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Documento…" className="w-40 pl-8"
+              value={filters.documento ?? ""} onChange={(e) => setFilters({ ...filters, documento: e.target.value || undefined })}
+            />
+          </div>
+          <Input placeholder="Fornecedor…" className="w-48"
+            value={filters.fornecedor ?? ""} onChange={(e) => setFilters({ ...filters, fornecedor: e.target.value || undefined })} />
+          <FSelect label="Centro de Custo" value={filters.centro_custo} options={facets.data?.centros ?? []}
+            onChange={(v) => setFilters({ ...filters, centro_custo: v })} />
+          <FSelect label="Conta" value={filters.conta} options={facets.data?.contas ?? []}
+            onChange={(v) => setFilters({ ...filters, conta: v })} />
+          <FSelect label="Status" value={filters.status} options={["aberto", "pago", "vencido"]}
+            onChange={(v) => setFilters({ ...filters, status: v as any })} />
+          {Object.values(filters).some(Boolean) && (
+            <Button variant="ghost" size="sm" onClick={() => setFilters({})}>Limpar filtros</Button>
+          )}
+        </div>
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <KpiCard title="Recebido / Pago" value={kpis.data?.receber.total} tone="success" icon={<ArrowDownCircle className="h-4 w-4" />}
-          breakdown={[
-            ["Hoje", kpis.data?.receber.hoje], ["Amanhã", kpis.data?.receber.amanha],
-            ["7 dias", kpis.data?.receber.d7], ["30 dias", kpis.data?.receber.d30],
-          ]} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <KpiCard
+          title={`Pago em ${periodLabel[period.preset]}`}
+          value={kpis.data?.pagoPeriodo}
+          tone="success"
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          badge={`${kpis.data?.pagoPeriodoCount ?? 0} títulos`}
+          big
+        />
         <KpiCard title="A Pagar" value={kpis.data?.pagar.total} tone="destructive" icon={<ArrowUpCircle className="h-4 w-4" />}
           breakdown={[
             ["Hoje", kpis.data?.pagar.hoje], ["Amanhã", kpis.data?.pagar.amanha],
@@ -122,14 +209,12 @@ function DashboardPage() {
           ]} />
         <SaldoPrevistoCard
           opening={opening}
-          pago={kpis.data?.pago ?? 0}
           vencido={kpis.data?.vencidos.total ?? 0}
           aVencer={kpis.data?.aVencer?.total ?? 0}
           onEditOpening={saveOpening}
         />
         <KpiCard title="A Vencer" value={kpis.data?.aVencer?.total} tone="warning" icon={<Clock className="h-4 w-4" />}
           badge={`${kpis.data?.aVencer?.count ?? 0} títulos`} big />
-        <KpiCard title="Pago" value={kpis.data?.pago} tone="success" icon={<CheckCircle2 className="h-4 w-4" />} big />
         <KpiCard title="Vencidos" value={kpis.data?.vencidos.total} tone="destructive" icon={<AlertTriangle className="h-4 w-4" />}
           badge={`${kpis.data?.vencidos.count ?? 0} títulos`} big />
       </div>
@@ -140,22 +225,14 @@ function DashboardPage() {
         <Card className="p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-lg font-bold">Fluxo de Caixa</h2>
+              <h2 className="text-lg font-bold">Fluxo de Caixa (Despesas)</h2>
               <p className="text-xs text-muted-foreground">
-                Receber, Pagar (barras · esquerda) e Saldo acumulado (linha · direita)
+                Despesas (barras · esquerda) e Saldo projetado (linha · direita). O saldo apenas diminui a partir do saldo inicial.
                 {opening.date && opening.value ? ` · Saldo inicial ${formatBRL(opening.value)} em ${formatDateBR(opening.date)}` : ""}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <OpeningBalancePopover opening={opening} onSave={saveOpening} />
-              <Tabs value={granularity} onValueChange={(v) => setGranularity(v as any)}>
-                <TabsList>
-                  <TabsTrigger value="day">Dia</TabsTrigger>
-                  <TabsTrigger value="week">Semana</TabsTrigger>
-                  <TabsTrigger value="month">Mês</TabsTrigger>
-                  <TabsTrigger value="year">Ano</TabsTrigger>
-                </TabsList>
-              </Tabs>
             </div>
           </div>
           <div className="h-[340px]">
@@ -170,8 +247,7 @@ function DashboardPage() {
                   tickFormatter={(v) => Intl.NumberFormat("pt-BR", { notation: "compact" }).format(v)} />
                 <RTooltip content={<ChartTooltip />} />
                 <Legend />
-                <Bar yAxisId="left" dataKey="receber" name="Receber" fill="#2E7D32" radius={[4, 4, 0, 0]} />
-                <Bar yAxisId="left" dataKey="pagar" name="Pagar" fill="#D32F2F" radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="left" dataKey="pagar" name="Despesa" fill="#D32F2F" radius={[4, 4, 0, 0]} />
                 <Line yAxisId="right" dataKey="saldo" name="Saldo" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -242,6 +318,7 @@ function DashboardPage() {
                 <TableHead>Fornecedor</TableHead>
                 <TableHead>Emissão</TableHead>
                 <TableHead>Vencimento</TableHead>
+                <TableHead>Sugestão Vencimento</TableHead>
                 <TableHead>Pagamento</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
                 <TableHead className="text-right">Pago</TableHead>
@@ -253,22 +330,29 @@ function DashboardPage() {
             </TableHeader>
             <TableBody>
               {(list.data?.rows ?? []).map((r: any) => (
-                <TableRow key={r.id} onClick={() => setDetail(r)} className="cursor-pointer">
-                  <TableCell className="font-medium">{r.documento ?? "—"}</TableCell>
-                  <TableCell className="max-w-[220px] truncate">{r.fornecedor ?? "—"}</TableCell>
-                  <TableCell>{formatDateBR(r.emissao)}</TableCell>
-                  <TableCell>{formatDateBR(r.vencimento)}</TableCell>
-                  <TableCell>{formatDateBR(r.pagamento)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatBRL(r.valor)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-[color:var(--success)]">{formatBRL(r.valor_pago)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-[color:var(--destructive)]">{formatBRL(r.valor_aberto)}</TableCell>
-                  <TableCell className="max-w-[140px] truncate">{r.centro_custo ?? "—"}</TableCell>
-                  <TableCell className="max-w-[120px] truncate">{r.conta ?? "—"}</TableCell>
-                  <TableCell><StatusBadge status={r.status} /></TableCell>
+                <TableRow key={r.id} className="cursor-pointer">
+                  <TableCell className="font-medium" onClick={() => setDetail(r)}>{r.documento ?? "—"}</TableCell>
+                  <TableCell className="max-w-[220px] truncate" onClick={() => setDetail(r)}>{r.fornecedor ?? "—"}</TableCell>
+                  <TableCell onClick={() => setDetail(r)}>{formatDateBR(r.emissao)}</TableCell>
+                  <TableCell onClick={() => setDetail(r)}>{formatDateBR(r.vencimento)}</TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <SugestaoVencimentoCell
+                      row={r}
+                      onSave={(date) => mutSugestao.mutate({ id: r.id, date })}
+                      pending={mutSugestao.isPending && mutSugestao.variables?.id === r.id}
+                    />
+                  </TableCell>
+                  <TableCell onClick={() => setDetail(r)}>{formatDateBR(r.pagamento)}</TableCell>
+                  <TableCell className="text-right tabular-nums" onClick={() => setDetail(r)}>{formatBRL(r.valor)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-[color:var(--success)]" onClick={() => setDetail(r)}>{formatBRL(r.valor_pago)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-[color:var(--destructive)]" onClick={() => setDetail(r)}>{formatBRL(r.valor_aberto)}</TableCell>
+                  <TableCell className="max-w-[140px] truncate" onClick={() => setDetail(r)}>{r.centro_custo ?? "—"}</TableCell>
+                  <TableCell className="max-w-[120px] truncate" onClick={() => setDetail(r)}>{r.conta ?? "—"}</TableCell>
+                  <TableCell onClick={() => setDetail(r)}><StatusBadge status={r.status} /></TableCell>
                 </TableRow>
               ))}
               {list.data && list.data.rows.length === 0 && (
-                <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground py-8">
+                <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                   Nenhum lançamento — importe uma planilha em <b>Novo Upload</b>.
                 </TableCell></TableRow>
               )}
@@ -387,7 +471,9 @@ function DetailGrid({ row }: { row: any }) {
   const cells: [string, React.ReactNode][] = [
     ["Documento", row.documento], ["Fornecedor", row.fornecedor], ["Conta", row.conta],
     ["Centro de Custo", row.centro_custo], ["Emissão", formatDateBR(row.emissao)],
-    ["Vencimento", formatDateBR(row.vencimento)], ["Pagamento", formatDateBR(row.pagamento)],
+    ["Vencimento", formatDateBR(row.vencimento)],
+    ["Sugestão Vencimento", formatDateBR(row.sugestao_vencimento)],
+    ["Pagamento", formatDateBR(row.pagamento)],
     ["Valor", formatBRL(row.valor)], ["Multa", formatBRL(row.multa)],
     ["Juros", formatBRL(row.juros)], ["Desconto", formatBRL(row.desconto)],
     ["Valor Pago", formatBRL(row.valor_pago)], ["Valor Aberto", formatBRL(row.valor_aberto)],
@@ -415,9 +501,7 @@ function ChartTooltip({ active, payload, label }: any) {
   return (
     <div className="rounded-lg border bg-card p-3 shadow-lg text-xs">
       <div className="mb-1 font-semibold">{label}</div>
-      <Row label="Receber" value={formatBRL(p.receber)} color="#2E7D32" />
-      <Row label="Pagar" value={formatBRL(p.pagar)} color="#D32F2F" />
-      <Row label="Diferença" value={formatBRL(p.diferenca)} color="#0D47A1" />
+      <Row label="Despesa" value={formatBRL(p.pagar)} color="#D32F2F" />
       <Row label="Saldo" value={formatBRL(p.saldo)} color="#1565C0" />
       <Row label="Títulos" value={String(p.qtd ?? 0)} color="#666" />
     </div>
@@ -454,7 +538,7 @@ function OpeningBalancePopover({ opening, onSave, compact }: { opening: { value:
       <PopoverContent align="end" className="w-72 space-y-3">
         <div>
           <h4 className="text-sm font-semibold">Saldo inicial</h4>
-          <p className="text-xs text-muted-foreground">Define o ponto de partida do saldo acumulado.</p>
+          <p className="text-xs text-muted-foreground">Define o ponto de partida do saldo. O saldo apenas diminui a partir daqui.</p>
         </div>
         <div className="space-y-2">
           <Label className="text-xs">Data de referência</Label>
@@ -477,10 +561,51 @@ function OpeningBalancePopover({ opening, onSave, compact }: { opening: { value:
   );
 }
 
+function SugestaoVencimentoCell({ row, onSave, pending }: { row: any; onSave: (date: string | null) => void; pending: boolean }) {
+  const effective = row.sugestao_vencimento ?? row.vencimento;
+  const [open, setOpen] = useState(false);
+  const [val, setVal] = useState(row.sugestao_vencimento ?? row.vencimento ?? "");
+  const overridden = !!row.sugestao_vencimento;
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setVal(row.sugestao_vencimento ?? row.vencimento ?? ""); }}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost" size="sm"
+          className={`h-7 gap-1 px-2 text-xs ${overridden ? "text-primary font-semibold" : "text-muted-foreground"}`}
+          disabled={pending}
+        >
+          <CalendarClock className="h-3.5 w-3.5" />
+          {formatDateBR(effective)}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-2">
+        <div className="space-y-1">
+          <Label className="text-xs">Sugestão de Vencimento</Label>
+          <Input type="date" value={val} onChange={(e) => setVal(e.target.value)} />
+          <p className="text-[10px] text-muted-foreground">Original: {formatDateBR(row.vencimento)}</p>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            variant="ghost" size="sm" className="gap-1"
+            onClick={() => { onSave(null); setOpen(false); }}
+            disabled={!overridden}
+            title="Voltar para o vencimento original"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Restaurar
+          </Button>
+          <Button size="sm" onClick={() => { onSave(val || null); setOpen(false); }} disabled={!val}>
+            Salvar
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 
 function exportCsv(rows: any[]) {
   if (!rows.length) { toast.info("Nenhum lançamento para exportar."); return; }
-  const cols = ["documento", "fornecedor", "emissao", "vencimento", "pagamento", "valor", "multa", "juros", "desconto", "valor_pago", "valor_aberto", "valor_total", "centro_custo", "conta", "status"];
+  const cols = ["documento", "fornecedor", "emissao", "vencimento", "sugestao_vencimento", "pagamento", "valor", "multa", "juros", "desconto", "valor_pago", "valor_aberto", "valor_total", "centro_custo", "conta", "status"];
   const csv = [cols.join(";"), ...rows.map((r) => cols.map((c) => JSON.stringify(r[c] ?? "")).join(";"))].join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -493,10 +618,10 @@ function exportCsv(rows: any[]) {
 type Scope = "none" | "vencido" | "aberto" | "ambos";
 
 function SaldoPrevistoCard({
-  opening, pago, vencido, aVencer, onEditOpening,
+  opening, vencido, aVencer, onEditOpening,
 }: {
   opening: { value: number; date: string };
-  pago: number; vencido: number; aVencer: number;
+  vencido: number; aVencer: number;
   onEditOpening: (v: { value: number; date: string }) => void;
 }) {
   const [scope, setScope] = useState<Scope>(() => {
@@ -507,17 +632,18 @@ function SaldoPrevistoCard({
     setScope(s);
     try { localStorage.setItem("fusion:saldoScope", s); } catch {}
   };
+  // Sistema de despesas: saldo previsto = inicial - despesas consideradas (nunca aumenta).
   const considerado =
     (scope === "vencido" || scope === "ambos" ? vencido : 0) +
     (scope === "aberto" || scope === "ambos" ? aVencer : 0);
-  const saldo = (opening.value || 0) - pago - considerado;
+  const saldo = (opening.value || 0) - considerado;
   const positivo = saldo >= 0;
 
   const scopeLabel: Record<Scope, string> = {
-    none: "somente pagos",
-    vencido: "pagos + vencidos",
-    aberto: "pagos + a vencer",
-    ambos: "pagos + vencidos + a vencer",
+    none: "somente inicial",
+    vencido: "− vencidos",
+    aberto: "− a vencer",
+    ambos: "− vencidos e a vencer",
   };
 
   return (
@@ -549,7 +675,7 @@ function SaldoPrevistoCard({
               }`}
               title={scopeLabel[s]}
             >
-              {s === "none" ? "Pagos" : s === "vencido" ? "+Venc" : s === "aberto" ? "+Aberto" : "Todos"}
+              {s === "none" ? "Base" : s === "vencido" ? "−Venc" : s === "aberto" ? "−Aberto" : "Todos"}
             </button>
           ))}
         </div>
@@ -630,4 +756,3 @@ function SmartPie({ title, data, maxSlices = 8 }: { title: string; data: { key: 
     </Card>
   );
 }
-
