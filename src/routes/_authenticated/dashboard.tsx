@@ -68,6 +68,29 @@ function computePeriod(preset: PeriodPreset, currentFrom?: string, currentTo?: s
   return { preset: "custom", from: currentFrom, to: currentTo, granularity: "month" };
 }
 
+function bucketToRange(bucket: string | null, granularity: "day" | "week" | "month" | "year"): { from: string; to: string } | null {
+  if (!bucket) return null;
+  const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  if (granularity === "day") return { from: bucket, to: bucket };
+  if (granularity === "month") {
+    const [y, m] = bucket.split("-").map(Number);
+    const start = new Date(Date.UTC(y, m - 1, 1));
+    const end = new Date(Date.UTC(y, m, 0));
+    return { from: iso(start), to: iso(end) };
+  }
+  if (granularity === "year") {
+    return { from: `${bucket}-01-01`, to: `${bucket}-12-31` };
+  }
+  // week: "YYYY-Www" — inverte a fórmula usada no servidor.
+  const [ys, ws] = bucket.split("-W");
+  const y = Number(ys); const w = Number(ws);
+  const jan1 = new Date(Date.UTC(y, 0, 1));
+  const offset = (w - 1) * 7 - jan1.getUTCDay();
+  const start = new Date(Date.UTC(y, 0, 1 + offset));
+  const end = new Date(Date.UTC(y, 0, 1 + offset + 6));
+  return { from: iso(start), to: iso(end) };
+}
+
 function DashboardPage() {
   const [period, setPeriod] = useState<Period>(() => computePeriod("month"));
   const [filters, setFilters] = useState<Omit<Filters, "from" | "to">>({});
