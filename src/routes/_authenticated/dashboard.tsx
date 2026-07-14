@@ -23,7 +23,7 @@ import {
 } from "recharts";
 import {
   ArrowUpCircle, Wallet, AlertTriangle, CheckCircle2, Clock,
-  Search, Download, ChevronLeft, ChevronRight, Settings2, CalendarClock, RotateCcw,
+  Search, Download, ChevronLeft, ChevronRight, Settings2, CalendarClock, RotateCcw, X,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
