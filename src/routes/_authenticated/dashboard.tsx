@@ -237,14 +237,14 @@ function DashboardPage() {
       </div>
 
 
-      {/* Chart + alerts */}
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
+      {/* Chart (full width) */}
+      <div className="mt-4">
         <Card className="p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-bold">Fluxo de Caixa (Despesas)</h2>
               <p className="text-xs text-muted-foreground">
-                Despesas (barras · esquerda) e Saldo projetado (linha · direita). O saldo apenas diminui a partir do saldo inicial.
+                Despesas (barras · esquerda) e Saldo projetado (linha · direita). Clique numa barra para filtrar os gráficos abaixo pelo período.
                 {opening.date && opening.value ? ` · Saldo inicial ${formatBRL(opening.value)} em ${formatDateBR(opening.date)}` : ""}
               </p>
             </div>
@@ -252,7 +252,7 @@ function DashboardPage() {
               <OpeningBalancePopover opening={opening} onSave={saveOpening} />
             </div>
           </div>
-          <div className="h-[340px]">
+          <div className="h-[380px]">
             <ResponsiveContainer>
               <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -264,17 +264,37 @@ function DashboardPage() {
                   tickFormatter={(v) => Intl.NumberFormat("pt-BR", { notation: "compact" }).format(v)} />
                 <RTooltip content={<ChartTooltip />} />
                 <Legend />
-                <Bar yAxisId="left" dataKey="pagar" name="Despesa" fill="#D32F2F" radius={[4, 4, 0, 0]} />
+                <Bar
+                  yAxisId="left" dataKey="pagar" name="Despesa" radius={[4, 4, 0, 0]}
+                  cursor="pointer"
+                  onClick={(d: any) => {
+                    const b = d?.bucket ?? d?.payload?.bucket;
+                    if (!b) return;
+                    setSelectedBucket((prev) => (prev === b ? null : b));
+                  }}
+                >
+                  {chartData.map((entry) => (
+                    <Cell
+                      key={entry.bucket}
+                      fill="#D32F2F"
+                      fillOpacity={selectedBucket == null ? 1 : selectedBucket === entry.bucket ? 1 : 0.25}
+                      stroke={selectedBucket === entry.bucket ? "#1565C0" : "none"}
+                      strokeWidth={selectedBucket === entry.bucket ? 2 : 0}
+                    />
+                  ))}
+                </Bar>
                 <Line yAxisId="right" dataKey="saldo" name="Saldo" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         </Card>
+      </div>
 
-
+      {/* Alerts (full width) */}
+      <div className="mt-4">
         <Card className="p-4">
           <h2 className="mb-3 text-lg font-bold">Alertas</h2>
-          <div className="space-y-4 text-sm">
+          <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
             <AlertSection title="Vencidos" tone="destructive" items={(alerts.data?.vencidos ?? []).map((v) => ({
               key: `v-${v.id}`, primary: v.fornecedor ?? "—",
               secondary: `${v.atraso} dias · ${formatDateBR(v.vencimento)}`,
@@ -292,6 +312,18 @@ function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      {/* Drill filter banner */}
+      {selectedBucket && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+          <span className="text-xs font-semibold uppercase text-primary">Filtro ativo</span>
+          <span className="font-semibold">{drillLabel}</span>
+          <span className="text-xs text-muted-foreground">nos gráficos analíticos abaixo</span>
+          <Button variant="ghost" size="sm" className="ml-auto h-7 gap-1 px-2 text-xs" onClick={() => setSelectedBucket(null)}>
+            <X className="h-3.5 w-3.5" /> Limpar filtro
+          </Button>
+        </div>
+      )}
 
       {/* Secondary charts grid */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -313,6 +345,7 @@ function DashboardPage() {
           </div>
         </Card>
       </div>
+
 
       {/* Table */}
       <Card className="mt-4 p-0 overflow-hidden">
