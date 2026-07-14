@@ -1,61 +1,36 @@
-# Plano
+## Objetivo
+Reorganizar o Dashboard para dar largura total ao gráfico de Fluxo de Caixa, mover Alertas para baixo, e tornar as barras clicáveis para filtrar os gráficos de pizza pelo dia selecionado.
 
-Três mudanças que se conectam: o dashboard vira 100% "contas a pagar", os filtros de período viram globais, e cada lançamento ganha uma "Sugestão de Vencimento" editável que passa a governar toda a lógica financeira.
+## Mudanças
 
-## 1. Remover completamente a lógica de "Recebido"
+### 1. Layout (uma coluna)
+Arquivo: `src/routes/_authenticated/dashboard.tsx`
+- Remover o grid 70/30 que envolve o `ComposedChart` e o painel de Alertas.
+- Empilhar em coluna única (`space-y-6`), cada seção com `w-full`:
+  1. Card do Fluxo de Caixa (100% largura, altura do gráfico mantida ou levemente aumentada).
+  2. Card de Alertas (100% largura, layout interno reorganizado em grid responsivo `md:grid-cols-3` para aproveitar a largura extra: Vencidos / Hoje / Amanhã lado a lado).
+- Manter responsividade (mobile = coluna única já natural).
 
-**Backend (`src/lib/dashboard.functions.ts`)**
-- Em `getKpis`: remover o bloco `receber` do retorno. Substituir por um novo campo `pago` calculado com base no filtro de período ativo (o mesmo intervalo `from`/`to` usado na query). Ele mostrará a soma de `valor_pago` das transações cuja `pagamento` cai dentro do período. Remover blocos `hoje/amanha/d7/d30` do receber; para o card "Pago" a exibição usará o total do período filtrado.
-- Em `getCashflowSeries`: remover `receber` dos buckets. Retornar só `pagar` (barras) e `saldo`. Regra de saldo: começa em `openingBalance` na `openingDate` e **apenas decresce** — `saldo = saldo - pagar` a cada bucket. Nunca soma entradas.
-- Em `getAlerts` e `getBreakdown`: remover qualquer agregação que use `valor_pago` como "entrada" — Breakdown passa a somar apenas `valor_aberto` (despesa restante) + despesas pagas (saída de caixa histórica), sem tratá-las como receita.
+### 2. Drill-down por dia
+Arquivo: `src/routes/_authenticated/dashboard.tsx`
+- Novo estado `selectedBucket: string | null` (chave do bucket clicado — dia/semana/mês conforme granularidade atual).
+- Passar `onClick` no `<Bar>` do Recharts capturando `payload.bucket`; toggle se clicar de novo.
+- Derivar `drillFilters` combinando os filtros globais existentes com `from`/`to` calculados a partir do bucket selecionado (dia = mesma data; mês = primeiro/último dia; semana/ano análogo).
+- Passar `drillFilters` (em vez de `filters`) para todas as queries dos gráficos de pizza e do "Top fornecedores" (`getBreakdown` para centro_custo, conta, fornecedor). KPIs, gráfico principal, alertas e tabela continuam usando `filters` originais.
 
-**Frontend (`src/routes/_authenticated/dashboard.tsx`)**
-- Remover o card "Recebido / Pago" e substituir pelo card **"Pago no período"**: um único valor = soma dos `valor_pago` cujo `pagamento` está dentro do filtro global (dia/semana/mês/ano/intervalo). Sem subdivisões hoje/amanhã/7d/30d.
-- No gráfico principal: remover a barra verde "Receber". Ficam só a barra "Pagar" (esquerda) e a linha "Saldo" (direita, monotonicamente decrescente).
-- Remover a seção "Top 10 a receber" dos alertas (se houver referência).
-- Legenda/subtítulo do gráfico: "Despesas (barras) e Saldo projetado (linha)".
+### 3. Destaque visual + banner
+Arquivo: `src/routes/_authenticated/dashboard.tsx`
+- No `<Bar>` usar `shape` customizado ou `fillOpacity` dinâmica: barras não selecionadas ganham `opacity: 0.3`; selecionada `opacity: 1` + `stroke` accent.
+- Acima da grade de pizzas, quando `selectedBucket` estiver setado, exibir chip:
+  `Filtro ativo: <label formatado>` + botão `✕ Limpar filtro` que zera `selectedBucket`.
+- Cursor `pointer` nas barras.
 
-## 2. Filtro de período global e sincronizado
+### 4. Performance
+- Estado 100% client-side; apenas as `useQuery` das pizzas recebem novo `queryKey` com o bucket, disparando refetch isolado. Gráfico principal e KPIs não re-renderizam com dados novos.
 
-- Elevar `granularity` + intervalo `from`/`to` ao nível de filtro global. Um único seletor de período (Dia/Semana/Mês/Ano/Personalizado) no topo, ao lado dos filtros existentes, calcula automaticamente `from` e `to`:
-  - Dia = hoje; Semana = semana corrente; Mês = mês corrente; Ano = ano corrente; Personalizado = mantém os inputs de data.
-- Remover o `Tabs` de granularidade do header do gráfico; ele passa a refletir o período global.
-- Todas as `useQuery` (kpis, series, alerts, breakdown-cc, breakdown-conta, top-fornec, list) já recebem `filters` — garantir que `granularity` também entre no `filters` (ou num objeto `period`) e que **todas** as chaves incluam o mesmo objeto, para que uma troca de período invalide e recarregue tudo simultaneamente.
-- Nenhum componente pode manter estado próprio de data/granularidade.
+## Fora do escopo
+- Nenhuma mudança em server functions, schema, importação ou lógica financeira.
+- Sem alterações no menu, autenticação ou MCP.
 
-## 3. Coluna "Sugestão Vencimento" editável e usada em toda a lógica
-
-**Banco (migration)**
-- Adicionar coluna `sugestao_vencimento DATE NULL` em `public.transactions`.
-- Ajustar policies existentes para permitir `UPDATE` apenas dessa coluna (nova policy `UPDATE ... USING (true) WITH CHECK (true)` restrita a authenticated; opcionalmente via `GRANT UPDATE (sugestao_vencimento)` em vez de update total, para blindar as outras colunas).
-- Não backfill: `sugestao_vencimento` fica `NULL` até o usuário editar; o código usa `COALESCE(sugestao_vencimento, vencimento)`.
-
-**Backend**
-- Novo server function `updateSugestaoVencimento({ id, date | null })` que faz o update pontual.
-- Em **toda** a lógica de dashboard (`getKpis`, `getCashflowSeries`, `getAlerts`, `getBreakdown`, filtros `from/to` que hoje batem em `vencimento`): substituir referências a `r.vencimento` por `effectiveVencimento = r.sugestao_vencimento ?? r.vencimento`. O cálculo de status "vencido" também passa a usar esse valor efetivo.
-- `listTransactions` retorna o novo campo. Filtro por data `from/to` passa a filtrar pelo vencimento efetivo (via `.or()` no PostgREST cobrindo `sugestao_vencimento` quando presente e `vencimento` quando null).
-
-**Frontend (tabela de Lançamentos)**
-- Nova coluna **"Sugestão Vencimento"** ao lado de "Vencimento". Mostra `sugestao_vencimento ?? vencimento`.
-- Célula editável: clique abre um `Popover` com o Shadcn Datepicker (com `pointer-events-auto`). Ao salvar, chama `updateSugestaoVencimento` via `useMutation` e invalida `["kpis"], ["series"], ["alerts"], ["breakdown-*"], ["top-fornec"], ["tx"]`.
-- Botão "Restaurar" no popover: envia `date: null` para voltar a usar a data original.
-- "Vencimento" original permanece visível como referência histórica (não editável).
-
-## Detalhes técnicos
-
-**Ordem de execução**
-1. Migration (adiciona coluna + policy/GRANT). Aguardar aprovação do usuário e regeneração dos types antes de tocar no código que lê `sugestao_vencimento`.
-2. Editar `dashboard.functions.ts` (remover receber, aplicar vencimento efetivo, novo `updateSugestaoVencimento`).
-3. Editar `dashboard.tsx` (novo card "Pago no período", remoção da barra Receber, filtro de período global, coluna editável).
-
-**Impactos fora do dashboard**
-- MCP tools em `src/lib/mcp/tools/*` que retornam KPIs precisam do mesmo tratamento (usar vencimento efetivo, remover conceito de receber). Ajustar `get-kpis.ts`, `get-overdue.ts`, `list-transactions.ts`.
-- `reports.functions.ts` continua importando `valor_pago` da planilha (é saída de caixa histórica), só muda a semântica na UI/agregações.
-
-**Saldo previsto (regra reforçada)**
-- `saldo(t) = openingBalance − Σ pagar(t' ≤ t)` para buckets ≥ `openingDate`.
-- O card "Saldo Previsto" atual deixa de somar `pago` como entrada; passa a mostrar `openingBalance − (vencidos + a vencer)` conforme o escopo escolhido.
-
-## Fora de escopo
-- Não altero identidade visual, tipografia, cores nem layout geral — apenas remoções/adições pontuais nos cards e coluna nova na tabela.
-- Não mexo em Upload, Histórico, Usuários ou Auth.
+## Critérios de aceitação
+Todos os itens da seção 5 do pedido do usuário.
