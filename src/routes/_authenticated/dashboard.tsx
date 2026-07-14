@@ -139,9 +139,9 @@ function DashboardPage() {
     queryFn: () => seriesFn({ data: { granularity: period.granularity, filters: effectiveFilters, openingBalance: opening.value || 0, openingDate: opening.date || undefined } }),
   });
   const alerts = useQuery({ queryKey: ["alerts", effectiveFilters], queryFn: () => alertsFn({ data: effectiveFilters }) });
-  const byCC = useQuery({ queryKey: ["breakdown-cc", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "centro_custo", filters: effectiveFilters, limit: 8 } }) });
-  const byConta = useQuery({ queryKey: ["breakdown-conta", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "conta", filters: effectiveFilters, limit: 8 } }) });
-  const topFornec = useQuery({ queryKey: ["top-fornec", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "fornecedor", filters: effectiveFilters, limit: 10 } }) });
+  const byCC = useQuery({ queryKey: ["breakdown-cc", drillFilters], queryFn: () => breakdownFn({ data: { dimension: "centro_custo", filters: drillFilters, limit: 8 } }) });
+  const byConta = useQuery({ queryKey: ["breakdown-conta", drillFilters], queryFn: () => breakdownFn({ data: { dimension: "conta", filters: drillFilters, limit: 8 } }) });
+  const topFornec = useQuery({ queryKey: ["top-fornec", drillFilters], queryFn: () => breakdownFn({ data: { dimension: "fornecedor", filters: drillFilters, limit: 10 } }) });
   const list = useQuery({ queryKey: ["tx", effectiveFilters, page], queryFn: () => listFn({ data: { filters: effectiveFilters, page, pageSize: 25 } }) });
   const facets = useQuery({ queryKey: ["facets"], queryFn: () => facetsFn() });
 
