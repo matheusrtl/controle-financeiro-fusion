@@ -23,7 +23,7 @@ import {
 } from "recharts";
 import {
   ArrowUpCircle, Wallet, AlertTriangle, CheckCircle2, Clock,
-  Search, Download, ChevronLeft, ChevronRight, Settings2, CalendarClock, RotateCcw,
+  Search, Download, ChevronLeft, ChevronRight, Settings2, CalendarClock, RotateCcw, X,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
@@ -68,11 +68,35 @@ function computePeriod(preset: PeriodPreset, currentFrom?: string, currentTo?: s
   return { preset: "custom", from: currentFrom, to: currentTo, granularity: "month" };
 }
 
+function bucketToRange(bucket: string | null, granularity: "day" | "week" | "month" | "year"): { from: string; to: string } | null {
+  if (!bucket) return null;
+  const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  if (granularity === "day") return { from: bucket, to: bucket };
+  if (granularity === "month") {
+    const [y, m] = bucket.split("-").map(Number);
+    const start = new Date(Date.UTC(y, m - 1, 1));
+    const end = new Date(Date.UTC(y, m, 0));
+    return { from: iso(start), to: iso(end) };
+  }
+  if (granularity === "year") {
+    return { from: `${bucket}-01-01`, to: `${bucket}-12-31` };
+  }
+  // week: "YYYY-Www" — inverte a fórmula usada no servidor.
+  const [ys, ws] = bucket.split("-W");
+  const y = Number(ys); const w = Number(ws);
+  const jan1 = new Date(Date.UTC(y, 0, 1));
+  const offset = (w - 1) * 7 - jan1.getUTCDay();
+  const start = new Date(Date.UTC(y, 0, 1 + offset));
+  const end = new Date(Date.UTC(y, 0, 1 + offset + 6));
+  return { from: iso(start), to: iso(end) };
+}
+
 function DashboardPage() {
   const [period, setPeriod] = useState<Period>(() => computePeriod("month"));
   const [filters, setFilters] = useState<Omit<Filters, "from" | "to">>({});
   const [page, setPage] = useState(0);
   const [detail, setDetail] = useState<any | null>(null);
+  const [selectedBucket, setSelectedBucket] = useState<string | null>(null);
   const [opening, setOpening] = useState<{ value: number; date: string }>(() => {
     if (typeof window === "undefined") return { value: 0, date: "" };
     try {
@@ -91,6 +115,22 @@ function DashboardPage() {
     () => ({ ...filters, from: period.from, to: period.to }),
     [filters, period]
   );
+
+  // Ao mudar granularidade/período, limpa o drill.
+  useEffect(() => { setSelectedBucket(null); }, [period.granularity, period.from, period.to]);
+
+  // Drill: reduz o intervalo ao bucket selecionado.
+  const drillRange = useMemo(() => bucketToRange(selectedBucket, period.granularity), [selectedBucket, period.granularity]);
+  const drillFilters: Filters = useMemo(
+    () => (drillRange ? { ...effectiveFilters, from: drillRange.from, to: drillRange.to } : effectiveFilters),
+    [effectiveFilters, drillRange]
+  );
+  const drillLabel = useMemo(() => {
+    if (!drillRange) return "";
+    if (drillRange.from === drillRange.to) return formatDateBR(drillRange.from);
+    return `${formatDateBR(drillRange.from)} → ${formatDateBR(drillRange.to)}`;
+  }, [drillRange]);
+
 
   const kpisFn = useServerFn(getKpis);
   const seriesFn = useServerFn(getCashflowSeries);
@@ -122,9 +162,9 @@ function DashboardPage() {
     queryFn: () => seriesFn({ data: { granularity: period.granularity, filters: effectiveFilters, openingBalance: opening.value || 0, openingDate: opening.date || undefined } }),
   });
   const alerts = useQuery({ queryKey: ["alerts", effectiveFilters], queryFn: () => alertsFn({ data: effectiveFilters }) });
-  const byCC = useQuery({ queryKey: ["breakdown-cc", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "centro_custo", filters: effectiveFilters, limit: 8 } }) });
-  const byConta = useQuery({ queryKey: ["breakdown-conta", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "conta", filters: effectiveFilters, limit: 8 } }) });
-  const topFornec = useQuery({ queryKey: ["top-fornec", effectiveFilters], queryFn: () => breakdownFn({ data: { dimension: "fornecedor", filters: effectiveFilters, limit: 10 } }) });
+  const byCC = useQuery({ queryKey: ["breakdown-cc", drillFilters], queryFn: () => breakdownFn({ data: { dimension: "centro_custo", filters: drillFilters, limit: 8 } }) });
+  const byConta = useQuery({ queryKey: ["breakdown-conta", drillFilters], queryFn: () => breakdownFn({ data: { dimension: "conta", filters: drillFilters, limit: 8 } }) });
+  const topFornec = useQuery({ queryKey: ["top-fornec", drillFilters], queryFn: () => breakdownFn({ data: { dimension: "fornecedor", filters: drillFilters, limit: 10 } }) });
   const list = useQuery({ queryKey: ["tx", effectiveFilters, page], queryFn: () => listFn({ data: { filters: effectiveFilters, page, pageSize: 25 } }) });
   const facets = useQuery({ queryKey: ["facets"], queryFn: () => facetsFn() });
 
@@ -220,14 +260,14 @@ function DashboardPage() {
       </div>
 
 
-      {/* Chart + alerts */}
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
+      {/* Chart (full width) */}
+      <div className="mt-4">
         <Card className="p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-bold">Fluxo de Caixa (Despesas)</h2>
               <p className="text-xs text-muted-foreground">
-                Despesas (barras · esquerda) e Saldo projetado (linha · direita). O saldo apenas diminui a partir do saldo inicial.
+                Despesas (barras · esquerda) e Saldo projetado (linha · direita). Clique numa barra para filtrar os gráficos abaixo pelo período.
                 {opening.date && opening.value ? ` · Saldo inicial ${formatBRL(opening.value)} em ${formatDateBR(opening.date)}` : ""}
               </p>
             </div>
@@ -235,7 +275,7 @@ function DashboardPage() {
               <OpeningBalancePopover opening={opening} onSave={saveOpening} />
             </div>
           </div>
-          <div className="h-[340px]">
+          <div className="h-[380px]">
             <ResponsiveContainer>
               <ComposedChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -247,17 +287,37 @@ function DashboardPage() {
                   tickFormatter={(v) => Intl.NumberFormat("pt-BR", { notation: "compact" }).format(v)} />
                 <RTooltip content={<ChartTooltip />} />
                 <Legend />
-                <Bar yAxisId="left" dataKey="pagar" name="Despesa" fill="#D32F2F" radius={[4, 4, 0, 0]} />
+                <Bar
+                  yAxisId="left" dataKey="pagar" name="Despesa" radius={[4, 4, 0, 0]}
+                  cursor="pointer"
+                  onClick={(d: any) => {
+                    const b = d?.bucket ?? d?.payload?.bucket;
+                    if (!b) return;
+                    setSelectedBucket((prev) => (prev === b ? null : b));
+                  }}
+                >
+                  {chartData.map((entry) => (
+                    <Cell
+                      key={entry.bucket}
+                      fill="#D32F2F"
+                      fillOpacity={selectedBucket == null ? 1 : selectedBucket === entry.bucket ? 1 : 0.25}
+                      stroke={selectedBucket === entry.bucket ? "#1565C0" : "none"}
+                      strokeWidth={selectedBucket === entry.bucket ? 2 : 0}
+                    />
+                  ))}
+                </Bar>
                 <Line yAxisId="right" dataKey="saldo" name="Saldo" stroke="#1565C0" strokeWidth={2.5} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         </Card>
+      </div>
 
-
+      {/* Alerts (full width) */}
+      <div className="mt-4">
         <Card className="p-4">
           <h2 className="mb-3 text-lg font-bold">Alertas</h2>
-          <div className="space-y-4 text-sm">
+          <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
             <AlertSection title="Vencidos" tone="destructive" items={(alerts.data?.vencidos ?? []).map((v) => ({
               key: `v-${v.id}`, primary: v.fornecedor ?? "—",
               secondary: `${v.atraso} dias · ${formatDateBR(v.vencimento)}`,
@@ -275,6 +335,18 @@ function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      {/* Drill filter banner */}
+      {selectedBucket && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+          <span className="text-xs font-semibold uppercase text-primary">Filtro ativo</span>
+          <span className="font-semibold">{drillLabel}</span>
+          <span className="text-xs text-muted-foreground">nos gráficos analíticos abaixo</span>
+          <Button variant="ghost" size="sm" className="ml-auto h-7 gap-1 px-2 text-xs" onClick={() => setSelectedBucket(null)}>
+            <X className="h-3.5 w-3.5" /> Limpar filtro
+          </Button>
+        </div>
+      )}
 
       {/* Secondary charts grid */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -296,6 +368,7 @@ function DashboardPage() {
           </div>
         </Card>
       </div>
+
 
       {/* Table */}
       <Card className="mt-4 p-0 overflow-hidden">
