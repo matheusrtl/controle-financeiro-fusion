@@ -73,6 +73,7 @@ function DashboardPage() {
   const [filters, setFilters] = useState<Omit<Filters, "from" | "to">>({});
   const [page, setPage] = useState(0);
   const [detail, setDetail] = useState<any | null>(null);
+  const [selectedBucket, setSelectedBucket] = useState<string | null>(null);
   const [opening, setOpening] = useState<{ value: number; date: string }>(() => {
     if (typeof window === "undefined") return { value: 0, date: "" };
     try {
@@ -91,6 +92,22 @@ function DashboardPage() {
     () => ({ ...filters, from: period.from, to: period.to }),
     [filters, period]
   );
+
+  // Ao mudar granularidade/período, limpa o drill.
+  useEffect(() => { setSelectedBucket(null); }, [period.granularity, period.from, period.to]);
+
+  // Drill: reduz o intervalo ao bucket selecionado.
+  const drillRange = useMemo(() => bucketToRange(selectedBucket, period.granularity), [selectedBucket, period.granularity]);
+  const drillFilters: Filters = useMemo(
+    () => (drillRange ? { ...effectiveFilters, from: drillRange.from, to: drillRange.to } : effectiveFilters),
+    [effectiveFilters, drillRange]
+  );
+  const drillLabel = useMemo(() => {
+    if (!drillRange) return "";
+    if (drillRange.from === drillRange.to) return formatDateBR(drillRange.from);
+    return `${formatDateBR(drillRange.from)} → ${formatDateBR(drillRange.to)}`;
+  }, [drillRange]);
+
 
   const kpisFn = useServerFn(getKpis);
   const seriesFn = useServerFn(getCashflowSeries);
